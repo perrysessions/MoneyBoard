@@ -1,25 +1,28 @@
 'use client'
 
 import { useState } from 'react'
-import Link from 'next/link'
-import { login } from '@/app/auth/actions'
+import { updatePassword } from '@/app/auth/actions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { DollarSign } from 'lucide-react'
 
-export default function LoginPage({ searchParams }: { searchParams: { error?: string } }) {
-  const [error, setError] = useState<string | null>(
-    searchParams.error === 'confirmation_failed' ? 'Email confirmation failed. Please try again.' : null
-  )
+export default function ResetPasswordPage() {
+  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setLoading(true)
     setError(null)
-    const result = await login(new FormData(e.currentTarget))
+    const fd = new FormData(e.currentTarget)
+    if (fd.get('password') !== fd.get('confirm')) {
+      setError('Passwords do not match.')
+      setLoading(false)
+      return
+    }
+    const result = await updatePassword(fd)
     if (result?.error) {
       setError(result.error)
       setLoading(false)
@@ -29,7 +32,6 @@ export default function LoginPage({ searchParams }: { searchParams: { error?: st
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-6 py-12">
       <div className="w-full max-w-sm">
-        {/* Logo */}
         <div className="flex flex-col items-center mb-10">
           <div className="bg-blue-600 text-white rounded-2xl p-4 mb-4 shadow-sm">
             <DollarSign className="h-8 w-8" />
@@ -40,23 +42,23 @@ export default function LoginPage({ searchParams }: { searchParams: { error?: st
 
         <Card className="border border-gray-100 shadow-md rounded-2xl">
           <CardHeader className="px-6 pt-6 pb-2">
-            <CardTitle className="text-xl font-semibold">Sign in</CardTitle>
-            <CardDescription className="text-gray-400">Welcome back</CardDescription>
+            <CardTitle className="text-xl font-semibold">New password</CardTitle>
+            <CardDescription className="text-gray-400">Choose a strong password</CardDescription>
           </CardHeader>
           <CardContent className="px-6 pb-6">
-            <form onSubmit={handleSubmit} className="space-y-5 mt-2">
+            <form onSubmit={handleSubmit} method="post" className="space-y-5 mt-2">
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-medium text-gray-700">Email</Label>
+                <Label htmlFor="password" className="text-sm font-medium text-gray-700">New password</Label>
                 <Input
-                  id="email" name="email" type="email" required
-                  placeholder="you@example.com"
+                  id="password" name="password" type="password" required minLength={8}
+                  placeholder="Min 8 characters"
                   className="h-12 rounded-xl text-base border-gray-200 focus:border-blue-500"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm font-medium text-gray-700">Password</Label>
+                <Label htmlFor="confirm" className="text-sm font-medium text-gray-700">Confirm password</Label>
                 <Input
-                  id="password" name="password" type="password" required
+                  id="confirm" name="confirm" type="password" required minLength={8}
                   placeholder="••••••••"
                   className="h-12 rounded-xl text-base border-gray-200 focus:border-blue-500"
                 />
@@ -68,19 +70,12 @@ export default function LoginPage({ searchParams }: { searchParams: { error?: st
               )}
               <Button
                 type="submit"
-                className="w-full h-12 rounded-xl text-base font-medium bg-blue-600 hover:bg-blue-700 mt-2"
+                className="w-full h-12 rounded-xl text-base font-medium bg-blue-600 hover:bg-blue-700"
                 disabled={loading}
               >
-                {loading ? 'Signing in…' : 'Sign in'}
+                {loading ? 'Saving…' : 'Set new password'}
               </Button>
-              <div className="text-center mt-3">
-                <Link href="/forgot-password" className="text-sm text-blue-600 hover:underline">Forgot password?</Link>
-              </div>
             </form>
-            <p className="mt-6 text-center text-sm text-gray-400">
-              Don&apos;t have an account?{' '}
-              <Link href="/signup" className="text-blue-600 font-medium hover:underline">Sign up</Link>
-            </p>
           </CardContent>
         </Card>
       </div>
