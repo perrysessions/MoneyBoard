@@ -2,14 +2,14 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { LayoutDashboard, List, BarChart2, Bell, Receipt } from 'lucide-react'
+import { LayoutDashboard, List, BarChart2, Bell, MessageCircle } from 'lucide-react'
 
 const links = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
   { href: '/dashboard/transactions', label: 'Transactions', icon: List },
   { href: '/dashboard/charts', label: 'Charts', icon: BarChart2 },
   { href: '/dashboard/limits', label: 'Limits', icon: Bell },
-  { href: '/dashboard/receipts', label: 'Receipts', icon: Receipt },
+  { href: '/dashboard/chat', label: 'Ask AI', icon: MessageCircle },
 ]
 
 export function BottomNav() {

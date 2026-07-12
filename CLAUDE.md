@@ -60,9 +60,10 @@ app/
   login/page.tsx
   signup/page.tsx
   dashboard/page.tsx                 # overview: stat cards, connected banks, transactions count
-  dashboard/transactions/page.tsx    # paginated transaction list, categorize button
+  dashboard/transactions/page.tsx    # paginated transaction list with splits, category/subcategory pickers
   dashboard/charts/page.tsx          # pie chart + line chart (Recharts)
-  dashboard/limits/page.tsx          # placeholder (Chunk 5)
+  dashboard/limits/page.tsx          # spending limits with category/subcategory/merchant targeting
+  dashboard/chat/page.tsx            # AI chat with session history and markdown rendering
   dashboard/receipts/page.tsx        # placeholder (Chunk 6)
   api/plaid/
     create-link-token/route.ts       # creates Plaid Link token
@@ -70,22 +71,40 @@ app/
     sync/route.ts                    # syncs all items via transactionsSync cursor, detects internal transfers
   api/accounts/nickname/route.ts     # PATCH — set/clear account nickname
   api/categorize/route.ts            # POST — Gemini AI categorization with merchant cache
-  api/transactions/category/route.ts # PATCH — manual category override
+  api/transactions/
+    category/route.ts                # PATCH — manual category/subcategory override
+    [id]/splits/route.ts             # GET list splits, POST create split
+    splits/[id]/route.ts             # DELETE split by id
+  api/limits/
+    route.ts                         # GET list, POST create spending limit
+    [id]/route.ts                    # PATCH update, DELETE limit
+  api/chat/
+    route.ts                         # GET usage, POST send message (multi-turn Gemini with session history)
+    sessions/route.ts                # GET list sessions, POST create session
+    sessions/[id]/route.ts           # GET messages for session, PATCH title, DELETE session
 lib/
   plaid/client.ts                    # Plaid API singleton
   supabase/client.ts                 # browser client
   supabase/server.ts                 # server client (cookies)
   gemini/categorize.ts               # Gemini merchant categorization (gemini-2.5-flash)
+  categories.ts                      # PRIMARY_LABELS, SUBCATEGORY_LABELS, formatCategory(), getSubcategoriesForPrimary(), effectiveCategory/Subcategory()
   accounts.ts                        # getAccountDisplayName() utility
 middleware.ts
 components/
   PlaidLinkButton.tsx                # preloads token on mount, opens synchronously on click
   SyncButton.tsx                     # triggers /api/plaid/sync
   AccountNicknameEditor.tsx          # inline pencil-icon edit
-  CategoryPicker.tsx                 # dropdown, blue=user override, gray=AI category
+  CategoryPicker.tsx                 # dropdown with custom entry support; blue=user override, gray=AI/Plaid
+  SubcategoryPicker.tsx              # dropdown scoped to primary category, with custom entry support
   CategorizeButton.tsx               # calls /api/categorize, shows result/error inline
   BottomNav.tsx                      # 5-tab fixed bottom nav
   ChartsView.tsx                     # client component: pie + line charts with presets
+  SpendingLimitsView.tsx             # spending limits CRUD; SubcategorySearch combobox for subcategory type
+  ChatView.tsx                       # AI chat: session sidebar, markdown rendering, usage meter
+  TransactionSplitButton.tsx         # inline split UI per transaction (scissors button → form)
+  TransactionFilters.tsx             # filter bar for transactions page
+  UndoBar.tsx                        # undo last category change
+  AppHeader.tsx                      # top header with logout
   ui/                                # shadcn: button, input, label, card, badge
 ```
 
@@ -98,14 +117,37 @@ accounts(id, user_id, plaid_item_id, plaid_account_id, institution, name, offici
 
 transactions(id, user_id, account_id, plaid_transaction_id, date, amount_cents,
              merchant_name, merchant_normalized, category, subcategory, pending,
-             ai_category, user_category, manual_override, is_internal_transfer)
+             ai_category, user_category, user_subcategory, manual_override, is_internal_transfer,
+             is_excluded)
+  -- is_excluded: user-toggled; hides transaction from all spend calculations (health share bills etc.)
+  -- Migration: ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_excluded boolean NOT NULL DEFAULT false;
   -- category/subcategory = Plaid's personal_finance_category (primary/detailed)
-  -- ai_category = Gemini result; user_category = manual override (manual_override=true)
+  -- ai_category = Gemini result; user_category/user_subcategory = manual overrides (manual_override=true)
 
 merchant_categories(id, user_id, merchant_normalized, category)
   -- cache: each unique merchant only hits Gemini once ever
 
-spending_limits(id, user_id, label, category, merchant_normalized, monthly_limit_cents, active)  -- Chunk 5
+spending_limits(id, user_id, label, category, subcategory, merchant_normalized,
+                monthly_limit_cents, active)
+  -- targeting: set exactly one of category, subcategory, or merchant_normalized
+  -- spent_cents calculated server-side in limits/page.tsx at render time
+
+transaction_splits(id, transaction_id, user_id, label, amount_cents, category, subcategory,
+                   created_at)
+  -- partial splits of a transaction; amount_cents must be > 0 and ≤ transaction total
+  -- RLS: users own their splits via user_id
+
+chat_sessions(id, user_id, title, created_at, updated_at)
+  -- auto-titled from first message (truncated to 50 chars)
+  -- RLS: users own their sessions
+
+chat_messages(id, session_id, role, content, tokens_used, created_at)
+  -- role: 'user' | 'assistant'
+  -- cascades on session delete
+  -- RLS via chat_sessions join
+
+ai_chat_usage(user_id, date, tokens_used, requests_count)
+  -- daily token limit: 100,000; upserted per request
 
 receipts(id, user_id, transaction_id nullable, storage_path, uploaded_at)       -- Chunk 6
 receipt_items(id, receipt_id, description, amount_cents, ai_category, manual_override)
@@ -118,13 +160,18 @@ receipt_items(id, receipt_id, description, amount_cents, ai_category, manual_ove
 - **Gemini quota:** Use `gemini-2.5-flash`. perrysessions@gmail.com Google account is on paid Cloud billing with $0 credits — always use wife's account API key. merchant_categories table caches results so each merchant only hits Gemini once.
 - **PlaidLinkButton:** Must preload token on mount (not on click) to avoid popup blocker. Call open() synchronously in the click handler.
 - **Plaid history:** Chase/Wells Fargo only provide ~3 months of transaction history via Plaid API regardless of what's requested. Historical data before that requires CSV import (planned Chunk 7).
+- **Spending limits spent_cents:** Calculated server-side in `dashboard/limits/page.tsx` at render time — builds categorySpend/subcategorySpend/merchantSpend maps from current-month transactions. After save/edit in SpendingLimitsView, call `window.location.reload()` (not optimistic update) to show correct server-calculated value.
+- **Subcategory keys:** Plaid uses keys like `FOOD_AND_DRINK_RESTAURANT` (not `RESTAURANTS`). All known keys are in `lib/categories.ts` SUBCATEGORY_LABELS. `formatCategory()` returns custom user labels as-is (bypasses the underscore→titlecase transform for non-Plaid strings).
+- **AI chat multi-turn:** Uses `model.generateContent({ contents: [...] })` with full history array (not `startChat()`). System context injected as first user/model exchange. Last 20 messages fetched per session.
+- **SubcategorySearch in limits:** Uses `<button type="button">` trigger (not div) so it appears in browser accessibility tree and click events fire reliably.
 
 ## Chunk plan
 - [x] **Chunk 1** — Scaffold, Supabase auth, passcode gate, Vercel deploy ✅
 - [x] **Chunk 2** — Plaid Production, Chase + Wells Fargo connected, transaction sync, internal transfer detection, account nicknames ✅
 - [x] **Chunk 3** — Gemini AI categorization, merchant cache, manual override, transactions page, bottom nav ✅
 - [x] **Chunk 4** — Charts: pie by category (with toggle-off, persisted in localStorage) + line trend with presets (30D/3M/6M/1Y/2Y/All) ✅
-- [ ] **Chunk 5** — Spending limits UI + Supabase email alerts to both users
+- [x] **Chunk 5** — Spending limits: category/subcategory/merchant targeting, progress bars, pause/resume, subcategory combobox search ✅
+- [x] **Chunk 5b** — Transaction splits (inline split form per transaction), AI chat session history + markdown rendering, custom category/subcategory entry ✅
 - [ ] **Chunk 6** — Receipt scanner (photo + PDF → Gemini Vision → itemized line items)
 - [ ] **Chunk 7** — CSV statement import for historical data (Chase + Wells Fargo export CSVs; AI maps columns → schema; fills in pre-Plaid history)
 

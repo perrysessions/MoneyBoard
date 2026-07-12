@@ -3,11 +3,11 @@
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { useState, useCallback } from 'react'
 import { Search, SlidersHorizontal, X } from 'lucide-react'
-import { CATEGORIES } from '@/lib/gemini/categorize'
+import { PLAID_PRIMARY_CATEGORIES, PRIMARY_LABELS, SUBCATEGORY_LABELS, getSubcategoriesForPrimary } from '@/lib/categories'
 
 type Account = { id: string; name: string; official_name: string | null; nickname: string | null; mask: string | null }
 
-export function TransactionFilters({ accounts }: { accounts: Account[] }) {
+export function TransactionFilters({ accounts, showTransfers }: { accounts: Account[]; showTransfers?: boolean }) {
   const router = useRouter()
   const pathname = usePathname()
   const sp = useSearchParams()
@@ -17,7 +17,7 @@ export function TransactionFilters({ accounts }: { accounts: Account[] }) {
 
   const push = useCallback((updates: Record<string, string>) => {
     const params = new URLSearchParams(sp.toString())
-    params.delete('page') // reset to page 1 on filter change
+    params.delete('page')
     for (const [k, v] of Object.entries(updates)) {
       if (v) params.set(k, v)
       else params.delete(k)
@@ -25,7 +25,7 @@ export function TransactionFilters({ accounts }: { accounts: Account[] }) {
     router.push(`${pathname}?${params.toString()}`)
   }, [sp, router, pathname])
 
-  const activeCount = ['search', 'account', 'category', 'dateFrom', 'dateTo', 'amountMin', 'amountMax']
+  const activeCount = ['search', 'account', 'category', 'subcategory', 'dateFrom', 'dateTo', 'amountMin', 'amountMax', 'showTransfers']
     .filter(k => sp.has(k)).length
 
   const clearAll = () => {
@@ -33,9 +33,16 @@ export function TransactionFilters({ accounts }: { accounts: Account[] }) {
     setOpen(false)
   }
 
+  // Subcategory options: scoped to the selected primary category if one is set
+  const selectedPrimary = get('category')
+  const subcategoryKeys = selectedPrimary
+    ? getSubcategoriesForPrimary(selectedPrimary)
+    : Object.keys(SUBCATEGORY_LABELS).sort((a, b) =>
+        (SUBCATEGORY_LABELS[a] ?? a).localeCompare(SUBCATEGORY_LABELS[b] ?? b)
+      )
+
   return (
     <div className="mb-4 space-y-2">
-      {/* Search bar + filter toggle */}
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
@@ -70,10 +77,8 @@ export function TransactionFilters({ accounts }: { accounts: Account[] }) {
         )}
       </div>
 
-      {/* Expanded filter panel */}
       {open && (
         <div className="bg-white border border-gray-100 rounded-2xl shadow-sm p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* Account */}
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Account</label>
             <select
@@ -90,20 +95,37 @@ export function TransactionFilters({ accounts }: { accounts: Account[] }) {
             </select>
           </div>
 
-          {/* Category */}
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Category</label>
             <select
               value={get('category')}
-              onChange={e => push({ category: e.target.value })}
+              onChange={e => push({ category: e.target.value, subcategory: '' })}
               className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <option value="">All categories</option>
-              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {PLAID_PRIMARY_CATEGORIES.map(key => (
+                <option key={key} value={key}>{PRIMARY_LABELS[key]}</option>
+              ))}
             </select>
           </div>
 
-          {/* Date from */}
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              Subcategory
+              {selectedPrimary && <span className="text-gray-400 font-normal"> (filtered to {PRIMARY_LABELS[selectedPrimary] ?? selectedPrimary})</span>}
+            </label>
+            <select
+              value={get('subcategory')}
+              onChange={e => push({ subcategory: e.target.value })}
+              className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">All subcategories</option>
+              {subcategoryKeys.map(key => (
+                <option key={key} value={key}>{SUBCATEGORY_LABELS[key] ?? key}</option>
+              ))}
+            </select>
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Date from</label>
             <input
@@ -114,7 +136,6 @@ export function TransactionFilters({ accounts }: { accounts: Account[] }) {
             />
           </div>
 
-          {/* Date to */}
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Date to</label>
             <input
@@ -125,32 +146,37 @@ export function TransactionFilters({ accounts }: { accounts: Account[] }) {
             />
           </div>
 
-          {/* Amount min */}
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Min amount ($)</label>
             <input
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="0.00"
+              type="number" min="0" step="0.01" placeholder="0.00"
               defaultValue={get('amountMin')}
               onChange={e => push({ amountMin: e.target.value })}
               className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
-          {/* Amount max */}
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Max amount ($)</label>
             <input
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="any"
+              type="number" min="0" step="0.01" placeholder="any"
               defaultValue={get('amountMax')}
               onChange={e => push({ amountMax: e.target.value })}
               className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={sp.get('showTransfers') === '1'}
+                onChange={e => push({ showTransfers: e.target.checked ? '1' : '' })}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-600">Show bank transfers</span>
+              <span className="text-xs text-gray-400">(hidden by default — not expenses)</span>
+            </label>
           </div>
         </div>
       )}
