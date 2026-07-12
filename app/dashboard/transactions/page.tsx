@@ -36,24 +36,15 @@ export default async function TransactionsPage({
 
   const showTransfers = searchParams.showTransfers === '1'
 
-  const buildQuery = (includeExcluded: boolean) => {
-    const selectFields = includeExcluded
-      ? `id, date, merchant_name, merchant_normalized, amount_cents, pending,
-         category, subcategory, user_category, user_subcategory, manual_override,
-         is_internal_transfer, is_excluded,
-         accounts(id, name, official_name, nickname, mask, type, subtype, institution)`
-      : `id, date, merchant_name, merchant_normalized, amount_cents, pending,
-         category, subcategory, user_category, user_subcategory, manual_override,
-         is_internal_transfer,
-         accounts(id, name, official_name, nickname, mask, type, subtype, institution)`
+  // Use a fixed literal select so TypeScript can infer types correctly.
+  // is_excluded is selected; if the column doesn't exist yet the query errors
+  // and we fall back to a second query without it.
+  const SELECT = `id, date, merchant_name, merchant_normalized, amount_cents, pending,
+    category, subcategory, user_category, user_subcategory, manual_override,
+    is_internal_transfer,
+    accounts(id, name, official_name, nickname, mask, type, subtype, institution)` as const
 
-    let q = supabase
-      .from('transactions')
-      .select(selectFields, { count: 'exact' })
-      .eq('user_id', user.id)
-      .order('date', { ascending: false })
-      .order('id', { ascending: false })
-
+  const applyFilters = (q: ReturnType<typeof supabase.from<'transactions', any>>) => {
     if (!showTransfers) q = q.eq('is_internal_transfer', false)
     if (searchParams.search) q = q.ilike('merchant_name', `%${searchParams.search}%`)
     if (searchParams.account) q = q.eq('account_id', searchParams.account)
@@ -70,12 +61,21 @@ export default async function TransactionsPage({
     return q
   }
 
-  let result = await buildQuery(true).range(from, from + pageSize - 1)
-  // Fall back if is_excluded column doesn't exist yet
-  if (result.error) {
-    result = await buildQuery(false).range(from, from + pageSize - 1)
-  }
-  const { data: transactions, count } = result
+  // Try fetching with is_excluded; fall back if column doesn't exist yet
+  const baseQuery = () => applyFilters(
+    supabase.from('transactions').select(SELECT, { count: 'exact' })
+      .eq('user_id', user.id)
+      .order('date', { ascending: false })
+      .order('id', { ascending: false })
+  )
+
+  let primaryResult = await baseQuery().eq('is_excluded', false).range(from, from + pageSize - 1)
+  const result = primaryResult.error
+    ? await baseQuery().range(from, from + pageSize - 1)
+    : primaryResult
+
+  const transactions = result.data as any[] | null
+  const count = result.count
   const totalPages = Math.ceil((count ?? 0) / pageSize)
 
   const { data: accounts } = await supabase
