@@ -29,52 +29,74 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-6 py-12">
       <div className="w-full max-w-sm">
-        <div className="flex justify-center mb-6">
-          <div className="flex items-center gap-2">
-            <div className="bg-blue-600 text-white rounded-lg p-2">
-              <DollarSign className="h-5 w-5" />
-            </div>
-            <span className="text-xl font-semibold text-gray-900">Money Board</span>
+        {/* Logo */}
+        <div className="flex flex-col items-center mb-10">
+          <div className="bg-blue-600 text-white rounded-2xl p-4 mb-4 shadow-sm">
+            <DollarSign className="h-8 w-8" />
           </div>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Money Board</h1>
+          <p className="text-sm text-gray-400 mt-1">Your personal finance dashboard</p>
         </div>
 
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg">Create account</CardTitle>
-            <CardDescription>You&apos;ll need an invite passcode to sign up</CardDescription>
+        <Card className="border border-gray-100 shadow-md rounded-2xl">
+          <CardHeader className="px-6 pt-6 pb-2">
+            <CardTitle className="text-xl font-semibold">Create account</CardTitle>
+            <CardDescription className="text-gray-400">You&apos;ll need an invite passcode</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-6 pb-6">
             {success ? (
-              <div className="text-center space-y-3">
-                <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-md p-3">{success}</p>
-                <Link href="/login" className="text-sm text-blue-600 hover:underline">Back to sign in</Link>
+              <div className="mt-2 text-center space-y-4">
+                <div className="bg-green-50 border border-green-100 rounded-xl px-4 py-4">
+                  <p className="text-sm text-green-700">{success}</p>
+                </div>
+                <Link href="/login" className="text-sm text-blue-600 font-medium hover:underline">Back to sign in</Link>
               </div>
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" name="email" type="email" required placeholder="you@example.com" />
+              <form onSubmit={handleSubmit} className="space-y-5 mt-2">
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-sm font-medium text-gray-700">Email</Label>
+                  <Input
+                    id="email" name="email" type="email" required
+                    placeholder="you@example.com"
+                    className="h-12 rounded-xl text-base border-gray-200 focus:border-blue-500"
+                  />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="password">Password</Label>
-                  <Input id="password" name="password" type="password" required placeholder="Min 8 characters" minLength={8} />
+                <div className="space-y-2">
+                  <Label htmlFor="password" className="text-sm font-medium text-gray-700">Password</Label>
+                  <Input
+                    id="password" name="password" type="password" required
+                    placeholder="Min 8 characters" minLength={8}
+                    className="h-12 rounded-xl text-base border-gray-200 focus:border-blue-500"
+                  />
                 </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="passcode">Invite passcode</Label>
-                  <Input id="passcode" name="passcode" type="password" required placeholder="••••" />
+                <div className="space-y-2">
+                  <Label htmlFor="passcode" className="text-sm font-medium text-gray-700">Invite passcode</Label>
+                  <Input
+                    id="passcode" name="passcode" type="password" required
+                    placeholder="••••"
+                    className="h-12 rounded-xl text-base border-gray-200 focus:border-blue-500"
+                  />
                 </div>
-                {error && <p className="text-sm text-red-500">{error}</p>}
-                <Button type="submit" className="w-full" disabled={loading}>
+                {error && (
+                  <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+                    <p className="text-sm text-red-600">{error}</p>
+                  </div>
+                )}
+                <Button
+                  type="submit"
+                  className="w-full h-12 rounded-xl text-base font-medium bg-blue-600 hover:bg-blue-700 mt-2"
+                  disabled={loading}
+                >
                   {loading ? 'Creating account…' : 'Create account'}
                 </Button>
               </form>
             )}
             {!success && (
-              <p className="mt-4 text-center text-sm text-gray-500">
+              <p className="mt-6 text-center text-sm text-gray-400">
                 Already have an account?{' '}
-                <Link href="/login" className="text-blue-600 hover:underline">Sign in</Link>
+                <Link href="/login" className="text-blue-600 font-medium hover:underline">Sign in</Link>
               </p>
             )}
           </CardContent>

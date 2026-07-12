@@ -27,40 +27,56 @@ export default function LoginPage({ searchParams }: { searchParams: { error?: st
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-6 py-12">
       <div className="w-full max-w-sm">
-        <div className="flex justify-center mb-6">
-          <div className="flex items-center gap-2">
-            <div className="bg-blue-600 text-white rounded-lg p-2">
-              <DollarSign className="h-5 w-5" />
-            </div>
-            <span className="text-xl font-semibold text-gray-900">Money Board</span>
+        {/* Logo */}
+        <div className="flex flex-col items-center mb-10">
+          <div className="bg-blue-600 text-white rounded-2xl p-4 mb-4 shadow-sm">
+            <DollarSign className="h-8 w-8" />
           </div>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Money Board</h1>
+          <p className="text-sm text-gray-400 mt-1">Your personal finance dashboard</p>
         </div>
 
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg">Sign in</CardTitle>
-            <CardDescription>Enter your email and password to continue</CardDescription>
+        <Card className="border border-gray-100 shadow-md rounded-2xl">
+          <CardHeader className="px-6 pt-6 pb-2">
+            <CardTitle className="text-xl font-semibold">Sign in</CardTitle>
+            <CardDescription className="text-gray-400">Welcome back</CardDescription>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-1.5">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" name="email" type="email" required placeholder="you@example.com" />
+          <CardContent className="px-6 pb-6">
+            <form onSubmit={handleSubmit} className="space-y-5 mt-2">
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-sm font-medium text-gray-700">Email</Label>
+                <Input
+                  id="email" name="email" type="email" required
+                  placeholder="you@example.com"
+                  className="h-12 rounded-xl text-base border-gray-200 focus:border-blue-500"
+                />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="password">Password</Label>
-                <Input id="password" name="password" type="password" required placeholder="••••••••" />
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-sm font-medium text-gray-700">Password</Label>
+                <Input
+                  id="password" name="password" type="password" required
+                  placeholder="••••••••"
+                  className="h-12 rounded-xl text-base border-gray-200 focus:border-blue-500"
+                />
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={loading}>
+              {error && (
+                <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+                  <p className="text-sm text-red-600">{error}</p>
+                </div>
+              )}
+              <Button
+                type="submit"
+                className="w-full h-12 rounded-xl text-base font-medium bg-blue-600 hover:bg-blue-700 mt-2"
+                disabled={loading}
+              >
                 {loading ? 'Signing in…' : 'Sign in'}
               </Button>
             </form>
-            <p className="mt-4 text-center text-sm text-gray-500">
+            <p className="mt-6 text-center text-sm text-gray-400">
               Don&apos;t have an account?{' '}
-              <Link href="/signup" className="text-blue-600 hover:underline">Sign up</Link>
+              <Link href="/signup" className="text-blue-600 font-medium hover:underline">Sign up</Link>
             </p>
           </CardContent>
         </Card>
