@@ -169,6 +169,9 @@ export function CategoryPicker({
           {PLAID_PRIMARY_CATEGORIES.map(key => (
             <option key={key} value={key}>{PRIMARY_LABELS[key]}</option>
           ))}
+          {value && !PLAID_PRIMARY_CATEGORIES.includes(value) && (
+            <option value={value}>{value}</option>
+          )}
           <option disabled>──────────</option>
           <option value="__custom__">✏ Custom…</option>
         </select>

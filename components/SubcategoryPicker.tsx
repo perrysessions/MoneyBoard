@@ -155,9 +155,7 @@ export function SubcategoryPicker({
     )
   }
 
-  if (!subcategoryKeys.length) return null
-
-  return (
+  const selectEl = (keys: string[]) => (
     <div className="relative inline-flex items-center">
       <select
         value={value ?? ''}
@@ -171,13 +169,23 @@ export function SubcategoryPicker({
           }`}
       >
         <option value="">{plaidSubcategory ? (SUBCATEGORY_LABELS[plaidSubcategory] ?? formatCategory(plaidSubcategory)) : 'Subcategory'}</option>
-        {subcategoryKeys.map(key => (
+        {keys.map(key => (
           <option key={key} value={key}>{SUBCATEGORY_LABELS[key]}</option>
         ))}
+        {value && !SUBCATEGORY_LABELS[value] && (
+          <option value={value}>{value}</option>
+        )}
         <option disabled>──────────</option>
         <option value="__custom__">✏ Custom…</option>
       </select>
       <ChevronDown className="absolute right-1 h-3 w-3 text-gray-400 pointer-events-none" />
     </div>
   )
+
+  if (!subcategoryKeys.length) {
+    // Custom primary category — show minimal picker so user can set a custom subcategory
+    return selectEl([])
+  }
+
+  return selectEl(subcategoryKeys)
 }

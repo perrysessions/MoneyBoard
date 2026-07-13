@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { PLAID_PRIMARY_CATEGORIES } from '@/lib/categories'
 
 export type Scope = 'single' | 'this_and_future' | 'all_past' | 'all'
 
@@ -67,11 +68,13 @@ export async function PATCH(req: Request) {
       user_subcategory: value ?? null,
     }
   } else {
-    // category field — clearing user_category also clears user_subcategory
+    // category field
+    const isCustomCategory = value !== null && !PLAID_PRIMARY_CATEGORIES.includes(value)
     updatePayload = {
       user_category: value ?? null,
       manual_override: !!value,
-      ...(value === null ? { user_subcategory: null } : {}),
+      // custom categories auto-get "Other" subcategory; Plaid categories and clears reset it
+      user_subcategory: isCustomCategory ? 'Other' : null,
     }
   }
 
