@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { SUBCATEGORY_LABELS, getSubcategoriesForPrimary, formatCategory } from '@/lib/categories'
-import { ChevronDown, X, Check } from 'lucide-react'
+import { ChevronDown, X, Search } from 'lucide-react'
 import { addUndoEntry } from '@/lib/undoHistory'
 
 type Scope = 'single' | 'this_and_future' | 'all_past' | 'all'
@@ -16,43 +16,67 @@ interface Props {
   merchantNormalized: string
   txDate: string
   onSaved?: () => void
+  customSubcategories?: string[]
 }
 
 export function SubcategoryPicker({
   transactionId, userSubcategory, plaidSubcategory, effectivePrimaryKey,
-  merchantName, merchantNormalized, txDate, onSaved,
+  merchantName, merchantNormalized, txDate, onSaved, customSubcategories = [],
 }: Props) {
   const [value, setValue] = useState<string | null>(userSubcategory)
   const [pending, setPending] = useState<string | null | undefined>(undefined)
-  const [showCustom, setShowCustom] = useState(false)
-  const [customText, setCustomText] = useState('')
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const [saving, setSaving] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const isOverridden = !!value
 
+  // Subcategory keys scoped to the active primary category
   const subcategoryKeys = effectivePrimaryKey
     ? getSubcategoriesForPrimary(effectivePrimaryKey)
     : Object.keys(SUBCATEGORY_LABELS)
 
-  const handleSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newVal = e.target.value
-    if (newVal === '__custom__') {
-      setShowCustom(true)
-      setCustomText('')
-      setTimeout(() => inputRef.current?.focus(), 0)
-      return
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setQuery('')
+      }
     }
-    const resolved = newVal || null
-    if (resolved === value) return
-    setPending(resolved)
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const openDropdown = () => {
+    setOpen(true)
+    setQuery('')
+    setTimeout(() => inputRef.current?.focus(), 0)
   }
 
-  const confirmCustom = () => {
-    const trimmed = customText.trim()
-    if (!trimmed) return
-    setShowCustom(false)
-    setPending(trimmed)
+  const q = query.trim().toLowerCase()
+
+  const filteredKeys = subcategoryKeys.filter(key =>
+    !q || (SUBCATEGORY_LABELS[key] ?? key).toLowerCase().includes(q)
+  )
+
+  const filteredCustom = customSubcategories.filter(s =>
+    !q || s.toLowerCase().includes(q)
+  )
+
+  // Show "Create" when query has text and doesn't match any existing label
+  const exactMatch =
+    subcategoryKeys.some(k => (SUBCATEGORY_LABELS[k] ?? k).toLowerCase() === q) ||
+    customSubcategories.some(s => s.toLowerCase() === q)
+  const showCreate = q.length > 0 && !exactMatch
+
+  const handleSelect = (newVal: string | null) => {
+    setOpen(false)
+    setQuery('')
+    if (newVal === value) return
+    setPending(newVal)
   }
 
   const applyScope = async (scope: Scope) => {
@@ -96,33 +120,11 @@ export function SubcategoryPicker({
 
   const cancelScope = () => setPending(undefined)
 
-  // Custom text input mode
-  if (showCustom) {
-    return (
-      <div className="flex items-center gap-1.5">
-        <input
-          ref={inputRef}
-          type="text"
-          value={customText}
-          onChange={e => setCustomText(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') confirmCustom()
-            if (e.key === 'Escape') setShowCustom(false)
-          }}
-          placeholder="Subcategory name…"
-          className="text-xs px-2 py-0.5 rounded-full border border-purple-300 bg-white focus:outline-none focus:ring-1 focus:ring-purple-400 w-36"
-        />
-        <button onClick={confirmCustom} className="text-green-600 hover:text-green-700">
-          <Check className="h-3 w-3" />
-        </button>
-        <button onClick={() => setShowCustom(false)} className="text-gray-400 hover:text-gray-600">
-          <X className="h-3 w-3" />
-        </button>
-      </div>
-    )
-  }
+  const displayLabel = value
+    ? (SUBCATEGORY_LABELS[value] ?? value)
+    : (plaidSubcategory ? (SUBCATEGORY_LABELS[plaidSubcategory] ?? formatCategory(plaidSubcategory)) : 'Subcategory')
 
-  // Scope panel
+  // Scope confirmation panel
   if (pending !== undefined) {
     return (
       <div className="flex flex-col gap-1.5 w-full mt-1">
@@ -155,37 +157,89 @@ export function SubcategoryPicker({
     )
   }
 
-  const selectEl = (keys: string[]) => (
-    <div className="relative inline-flex items-center">
-      <select
-        value={value ?? ''}
-        onChange={handleSelect}
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
         disabled={saving}
-        title={isOverridden ? 'You set this subcategory' : 'Override subcategory'}
-        className={`text-xs pr-5 pl-2 py-0.5 rounded-full border appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-400
+        onClick={openDropdown}
+        className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-400 max-w-[200px]
           ${isOverridden
             ? 'bg-purple-50 border-purple-200 text-purple-700'
             : 'bg-gray-50 border-gray-200 text-gray-500'
           }`}
       >
-        <option value="">{plaidSubcategory ? (SUBCATEGORY_LABELS[plaidSubcategory] ?? formatCategory(plaidSubcategory)) : 'Subcategory'}</option>
-        {keys.map(key => (
-          <option key={key} value={key}>{SUBCATEGORY_LABELS[key]}</option>
-        ))}
-        {value && !SUBCATEGORY_LABELS[value] && (
-          <option value={value}>{value}</option>
-        )}
-        <option disabled>──────────</option>
-        <option value="__custom__">✏ Custom…</option>
-      </select>
-      <ChevronDown className="absolute right-1 h-3 w-3 text-gray-400 pointer-events-none" />
+        <span className="truncate">{displayLabel}</span>
+        <ChevronDown className="h-3 w-3 shrink-0 text-gray-400" />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 left-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-gray-100 flex items-center gap-2">
+            <Search className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search subcategories…"
+              className="flex-1 text-xs focus:outline-none bg-transparent"
+            />
+            {query && (
+              <button onClick={() => setQuery('')}>
+                <X className="h-3 w-3 text-gray-400" />
+              </button>
+            )}
+          </div>
+          <ul className="max-h-52 overflow-y-auto">
+            {/* Clear option */}
+            {!q && value && (
+              <li
+                onMouseDown={() => handleSelect(null)}
+                className="px-3 py-2 text-xs cursor-pointer hover:bg-gray-50 text-gray-400 italic"
+              >
+                Clear override
+              </li>
+            )}
+            {filteredKeys.map(key => (
+              <li
+                key={key}
+                onMouseDown={() => handleSelect(key)}
+                className={`px-3 py-2 text-xs cursor-pointer hover:bg-purple-50 ${value === key ? 'bg-purple-50 text-purple-700 font-medium' : 'text-gray-700'}`}
+              >
+                {SUBCATEGORY_LABELS[key] ?? key}
+              </li>
+            ))}
+            {filteredCustom.length > 0 && (
+              <>
+                <li className="px-3 pt-2 pb-1 text-[10px] font-medium text-gray-400 uppercase tracking-wide border-t border-gray-100">
+                  Custom
+                </li>
+                {filteredCustom.map(s => (
+                  <li
+                    key={s}
+                    onMouseDown={() => handleSelect(s)}
+                    className={`px-3 py-2 text-xs cursor-pointer hover:bg-purple-50 ${value === s ? 'bg-purple-50 text-purple-700 font-medium' : 'text-gray-700'}`}
+                  >
+                    {s}
+                  </li>
+                ))}
+              </>
+            )}
+            {showCreate && (
+              <li
+                onMouseDown={() => handleSelect(query.trim())}
+                className="px-3 py-2 text-xs cursor-pointer hover:bg-purple-50 text-purple-600 font-medium border-t border-gray-100"
+              >
+                Create &ldquo;{query.trim()}&rdquo;
+              </li>
+            )}
+            {filteredKeys.length === 0 && !showCreate && (
+              <li className="px-3 py-2 text-xs text-gray-400">No results</li>
+            )}
+          </ul>
+        </div>
+      )}
     </div>
   )
-
-  if (!subcategoryKeys.length) {
-    // Custom primary category — show minimal picker so user can set a custom subcategory
-    return selectEl([])
-  }
-
-  return selectEl(subcategoryKeys)
 }

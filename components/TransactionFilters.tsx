@@ -25,8 +25,10 @@ export function TransactionFilters({ accounts, showTransfers }: { accounts: Acco
     router.push(`${pathname}?${params.toString()}`)
   }, [sp, router, pathname])
 
-  const activeCount = ['search', 'account', 'category', 'subcategory', 'dateFrom', 'dateTo', 'amountMin', 'amountMax', 'showTransfers']
+  const activeCount = ['search', 'account', 'category', 'subcategory', 'dateFrom', 'dateTo', 'amountMin', 'amountMax', 'showTransfers', 'txType']
     .filter(k => sp.has(k)).length
+
+  const txType = get('txType')
 
   const clearAll = () => {
     router.push(pathname)
@@ -43,6 +45,27 @@ export function TransactionFilters({ accounts, showTransfers }: { accounts: Acco
 
   return (
     <div className="mb-4 space-y-2">
+      <div className="flex gap-1.5">
+        {(['', 'charges', 'income'] as const).map((val) => {
+          const label = val === '' ? 'All' : val === 'charges' ? 'Charges' : 'Income'
+          const active = txType === val
+          return (
+            <button
+              key={val}
+              onClick={() => push({ txType: val })}
+              className={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${
+                active
+                  ? val === 'income'
+                    ? 'bg-green-50 border-green-200 text-green-700'
+                    : 'bg-blue-50 border-blue-200 text-blue-700'
+                  : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+              }`}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />

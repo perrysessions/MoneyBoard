@@ -139,14 +139,16 @@ export default async function DashboardPage({
             <p className="text-xs text-gray-400 mt-1">All outflows</p>
           </div>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Total Income</span>
-              <TrendingDown className="h-4 w-4 text-green-300" />
+          <Link href="/dashboard/transactions?txType=income" className="block">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Total Income</span>
+                <TrendingDown className="h-4 w-4 text-green-300" />
+              </div>
+              <p className="text-2xl font-semibold text-green-600">{totalIncome > 0 ? fmt(totalIncome) : '—'}</p>
+              <p className="text-xs text-gray-400 mt-1">Credits & deposits</p>
             </div>
-            <p className="text-2xl font-semibold text-green-600">{totalIncome > 0 ? fmt(totalIncome) : '—'}</p>
-            <p className="text-xs text-gray-400 mt-1">Credits & deposits</p>
-          </div>
+          </Link>
 
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
             <div className="flex items-center justify-between mb-3">

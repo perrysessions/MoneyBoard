@@ -10,7 +10,7 @@ Personal finance dashboard for Perry & Karen Sessions. Next.js 14 app with Supab
 - **AI:** Google Gemini API — use `gemini-2.5-flash` model (free tier works; use wife's Google account key)
 - **Charts:** Recharts (pie + line)
 - **Email alerts:** Supabase built-in SMTP
-- **Deploy:** Vercel (auto-deploys on push to main)
+- **Deploy:** Vercel (auto-deploys on push to main) — only push when user explicitly asks
 
 ## URLs
 - **Local:** http://localhost:3001
@@ -110,7 +110,8 @@ components/
 
 ## Supabase schema (actual, as built)
 ```sql
-plaid_items(id, user_id, access_token, institution_id, institution_name, cursor)
+plaid_items(id, user_id, access_token, institution_id, institution_name, cursor, last_synced_at)
+  -- Migration: ALTER TABLE plaid_items ADD COLUMN IF NOT EXISTS last_synced_at timestamptz;
 
 accounts(id, user_id, plaid_item_id, plaid_account_id, institution, name, official_name,
          nickname, mask, type, subtype)

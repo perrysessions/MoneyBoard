@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import { List } from 'lucide-react'
 import {
@@ -131,13 +131,21 @@ function lsSet(key: string, value: unknown) {
 }
 
 export function ChartsView({ transactions, earliest, latest }: { transactions: Tx[], earliest: string | null, latest: string | null }) {
-  const [piePreset, setPiePreset] = useState(() => ls('charts-pie-preset', 1))
-  const [linePreset, setLinePreset] = useState(() => ls('charts-line-preset', 5))
-  const [lineCategory, setLineCategory] = useState(() => ls('charts-line-category', '__all__'))
-  const [useSubcategory, setUseSubcategory] = useState(() => ls('charts-use-subcategory', false))
-  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(() =>
-    new Set(ls<string[]>(useSubcategory ? 'charts-hidden-sub' : 'charts-hidden-primary', []))
-  )
+  // Use safe server-side defaults; restore from localStorage after hydration to avoid mismatch
+  const [piePreset, setPiePreset] = useState(1)
+  const [linePreset, setLinePreset] = useState(5)
+  const [lineCategory, setLineCategory] = useState('__all__')
+  const [useSubcategory, setUseSubcategory] = useState(false)
+  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    const sub = ls('charts-use-subcategory', false)
+    setPiePreset(ls('charts-pie-preset', 1))
+    setLinePreset(ls('charts-line-preset', 5))
+    setLineCategory(ls('charts-line-category', '__all__'))
+    setUseSubcategory(sub)
+    setHiddenCategories(new Set(ls<string[]>(sub ? 'charts-hidden-sub' : 'charts-hidden-primary', [])))
+  }, [])
 
   const handlePiePreset = (i: number) => { setPiePreset(i); lsSet('charts-pie-preset', i) }
   const handleLinePreset = (i: number) => { setLinePreset(i); lsSet('charts-line-preset', i) }

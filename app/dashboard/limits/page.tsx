@@ -16,19 +16,22 @@ export default async function LimitsPage() {
   const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1)
   const monthEnd = nextMonth.toISOString().slice(0, 10)
 
-  const [{ data: limits }, { data: txRows }, { data: merchantRows }] = await Promise.all([
+  const [
+    { data: limits, error: limitsError },
+    { data: txRows, error: txError },
+    { data: merchantRows },
+  ] = await Promise.all([
     supabase
       .from('spending_limits')
       .select('*')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: true }),
+      .order('id', { ascending: true }),
 
-    // Fetch current month transactions for spend calculation
+    // Fetch current month transactions for spend calculation (include pending)
     supabase
       .from('transactions')
       .select('amount_cents, category, user_category, subcategory, user_subcategory, merchant_normalized')
       .eq('user_id', user.id)
-      .eq('pending', false)
       .eq('is_internal_transfer', false)
       .gte('date', monthStart)
       .lt('date', monthEnd)
@@ -42,6 +45,9 @@ export default async function LimitsPage() {
       .not('merchant_normalized', 'is', null)
       .limit(500),
   ])
+
+  if (limitsError) console.error('[limits page] spending_limits query failed:', limitsError.message)
+  if (txError) console.error('[limits page] transactions query failed:', txError.message)
 
   // Build spend lookup: category → cents, subcategory → cents, merchant → cents
   const categorySpend: Record<string, number> = {}
@@ -66,6 +72,14 @@ export default async function LimitsPage() {
 
   const merchants = [...new Set((merchantRows ?? []).map(r => r.merchant_normalized).filter(Boolean))].sort() as string[]
 
+  const allPlaidKeys = new Set(['INCOME','TRANSFER_IN','TRANSFER_OUT','LOAN_PAYMENTS','BANK_FEES',
+    'ENTERTAINMENT','FOOD_AND_DRINK','GENERAL_MERCHANDISE','HOME_IMPROVEMENT','MEDICAL',
+    'PERSONAL_CARE','GENERAL_SERVICES','GOVERNMENT_AND_NON_PROFIT','TRANSPORTATION','TRAVEL','RENT_AND_UTILITIES'])
+
+  const customCategories = [...new Set(
+    (txRows ?? []).map(t => t.user_category).filter((c): c is string => !!c && !allPlaidKeys.has(c))
+  )].sort()
+
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
       <AppHeader email={user.email!} />
@@ -82,7 +96,7 @@ export default async function LimitsPage() {
           </div>
         </div>
 
-        <SpendingLimitsView initialLimits={initialLimits} merchants={merchants} />
+        <SpendingLimitsView initialLimits={initialLimits} merchants={merchants} customCategories={customCategories} />
       </main>
     </div>
   )

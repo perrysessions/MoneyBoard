@@ -5,12 +5,14 @@ import { AppHeader } from '@/components/AppHeader'
 import { ChartsView } from '@/components/ChartsView'
 import { effectiveCategory, formatCategory } from '@/lib/categories'
 
+export const dynamic = 'force-dynamic'
+
 export default async function ChartsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const { data: transactions } = await supabase
+  const baseQuery = () => supabase
     .from('transactions')
     .select('date, amount_cents, category, subcategory, user_category, user_subcategory')
     .eq('user_id', user.id)
@@ -18,6 +20,10 @@ export default async function ChartsPage() {
     .eq('is_internal_transfer', false)
     .gt('amount_cents', 0)
     .order('date', { ascending: true })
+
+  let result = await baseQuery().eq('is_excluded', false)
+  if (result.error) result = await baseQuery()
+  const transactions = result.data
 
   const txs = (transactions ?? []).map(t => ({
     date: t.date as string,

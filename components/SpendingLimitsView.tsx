@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import Link from 'next/link'
 import { Plus, Pencil, Trash2, X, Check, ChevronDown, Search } from 'lucide-react'
 import { PLAID_PRIMARY_CATEGORIES, PRIMARY_LABELS, SUBCATEGORY_LABELS } from '@/lib/categories'
 
@@ -140,13 +141,14 @@ function ProgressBar({ spent, limit }: { spent: number; limit: number }) {
 interface LimitFormProps {
   initialForm?: FormState
   merchants: string[]
+  customCategories: string[]
   saving: boolean
   onSubmit: (form: FormState) => void
   onCancel: () => void
   submitLabel: string
 }
 
-function LimitForm({ initialForm, merchants, saving, onSubmit, onCancel, submitLabel }: LimitFormProps) {
+function LimitForm({ initialForm, merchants, customCategories, saving, onSubmit, onCancel, submitLabel }: LimitFormProps) {
   const [form, setForm] = useState<FormState>(initialForm ?? emptyForm())
   const set = (k: keyof FormState, v: string) => setForm(f => ({ ...f, [k]: v }))
 
@@ -191,6 +193,13 @@ function LimitForm({ initialForm, merchants, saving, onSubmit, onCancel, submitL
               {PLAID_PRIMARY_CATEGORIES.map(key => (
                 <option key={key} value={key}>{PRIMARY_LABELS[key]}</option>
               ))}
+              {customCategories.length > 0 && (
+                <optgroup label="Custom">
+                  {customCategories.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
             <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
           </div>
@@ -263,9 +272,11 @@ function LimitForm({ initialForm, merchants, saving, onSubmit, onCancel, submitL
 export function SpendingLimitsView({
   initialLimits,
   merchants,
+  customCategories,
 }: {
   initialLimits: LimitRow[]
   merchants: string[]
+  customCategories: string[]
 }) {
   const [limits, setLimits] = useState<LimitRow[]>(initialLimits)
   const [showAdd, setShowAdd] = useState(false)
@@ -397,6 +408,7 @@ export function SpendingLimitsView({
       {showAdd ? (
         <LimitForm
           merchants={merchants}
+          customCategories={customCategories}
           saving={saving}
           onSubmit={handleAdd}
           onCancel={() => { setShowAdd(false); setError(null) }}
@@ -421,6 +433,7 @@ export function SpendingLimitsView({
                 <LimitForm
                   initialForm={getEditForm(limit)}
                   merchants={merchants}
+                  customCategories={customCategories}
                   saving={saving}
                   onSubmit={handleEdit}
                   onCancel={() => { setEditingId(null); setError(null) }}
@@ -431,13 +444,32 @@ export function SpendingLimitsView({
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-gray-900 truncate">{limit.label}</p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {limit.merchant_normalized
-                          ? `Merchant: ${limit.merchant_normalized}`
-                          : limit.subcategory
-                          ? SUBCATEGORY_LABELS[limit.subcategory] ?? limit.subcategory
-                          : PRIMARY_LABELS[limit.category ?? ''] ?? limit.category}
-                      </p>
+                      <div className="flex flex-col gap-0.5 mt-0.5">
+                        {limit.merchant_normalized && (
+                          <p className="text-xs text-gray-400">
+                            Merchant:{' '}
+                            <Link href={`/dashboard/transactions?search=${encodeURIComponent(limit.merchant_normalized)}`} className="text-blue-500 hover:underline">
+                              {limit.merchant_normalized}
+                            </Link>
+                          </p>
+                        )}
+                        {limit.category && (
+                          <p className="text-xs text-gray-400">
+                            Category:{' '}
+                            <Link href={`/dashboard/transactions?category=${encodeURIComponent(limit.category)}`} className="text-blue-500 hover:underline">
+                              {PRIMARY_LABELS[limit.category] ?? limit.category}
+                            </Link>
+                          </p>
+                        )}
+                        {limit.subcategory && (
+                          <p className="text-xs text-gray-400">
+                            Subcategory:{' '}
+                            <Link href={`/dashboard/transactions?subcategory=${encodeURIComponent(limit.subcategory)}`} className="text-blue-500 hover:underline">
+                              {SUBCATEGORY_LABELS[limit.subcategory] ?? limit.subcategory}
+                            </Link>
+                          </p>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button
@@ -501,14 +533,18 @@ export function SpendingLimitsView({
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-gray-700 truncate">{limit.label}</p>
-                    <p className="text-xs text-gray-400">
-                      {limit.merchant_normalized
-                        ? `Merchant: ${limit.merchant_normalized}`
-                        : limit.subcategory
-                        ? SUBCATEGORY_LABELS[limit.subcategory] ?? limit.subcategory
-                        : PRIMARY_LABELS[limit.category ?? ''] ?? limit.category}
-                      {' · '}{fmt(limit.monthly_limit_cents)}/mo
-                    </p>
+                    <div className="flex flex-wrap items-center gap-x-1 text-xs text-gray-400">
+                      {limit.merchant_normalized && (
+                        <span>Merchant: <Link href={`/dashboard/transactions?search=${encodeURIComponent(limit.merchant_normalized)}`} className="text-blue-400 hover:underline">{limit.merchant_normalized}</Link></span>
+                      )}
+                      {limit.category && (
+                        <span>Category: <Link href={`/dashboard/transactions?category=${encodeURIComponent(limit.category)}`} className="text-blue-400 hover:underline">{PRIMARY_LABELS[limit.category] ?? limit.category}</Link></span>
+                      )}
+                      {limit.subcategory && (
+                        <span>Subcategory: <Link href={`/dashboard/transactions?subcategory=${encodeURIComponent(limit.subcategory)}`} className="text-blue-400 hover:underline">{SUBCATEGORY_LABELS[limit.subcategory] ?? limit.subcategory}</Link></span>
+                      )}
+                      <span>· {fmt(limit.monthly_limit_cents)}/mo</span>
+                    </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <button

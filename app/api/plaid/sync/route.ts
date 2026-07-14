@@ -42,12 +42,12 @@ export async function POST() {
         plaid_transaction_id: t.transaction_id,
         date: t.date,
         amount_cents: Math.round(t.amount * 100),
+        raw_name: t.name,
         merchant_name: t.merchant_name ?? t.name,
         merchant_normalized: (t.merchant_name ?? t.name).toLowerCase().trim(),
         category: t.personal_finance_category?.primary ?? null,
         subcategory: t.personal_finance_category?.detailed ?? null,
         pending: t.pending,
-        manual_override: false,
       }))
 
       if (toUpsert.length) {
@@ -66,7 +66,7 @@ export async function POST() {
       hasMore = has_more
     }
 
-    await supabase.from('plaid_items').update({ cursor }).eq('id', item.id)
+    await supabase.from('plaid_items').update({ cursor, last_synced_at: new Date().toISOString() }).eq('id', item.id)
   }
 
   // Detect internal transfers: match TRANSFER_OUT with TRANSFER_IN across

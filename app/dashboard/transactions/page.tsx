@@ -4,11 +4,11 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import { AppHeader } from '@/components/AppHeader'
-import { CategoryPicker } from '@/components/CategoryPicker'
-import { SubcategoryPicker } from '@/components/SubcategoryPicker'
+import { CategorySubcategoryPickers } from '@/components/CategorySubcategoryPickers'
 import { UndoBar } from '@/components/UndoBar'
 
 import { TransactionFilters } from '@/components/TransactionFilters'
+import { SyncButton } from '@/components/SyncButton'
 import { TransactionSplitButton } from '@/components/TransactionSplitButton'
 import { ExcludeButton } from '@/components/ExcludeButton'
 
@@ -23,7 +23,7 @@ export default async function TransactionsPage({
   searchParams: {
     page?: string; search?: string; account?: string; category?: string; subcategory?: string
     dateFrom?: string; dateTo?: string; amountMin?: string; amountMax?: string
-    showTransfers?: string
+    showTransfers?: string; txType?: string
   }
 }) {
   const supabase = await createClient()
@@ -36,12 +36,12 @@ export default async function TransactionsPage({
 
   const showTransfers = searchParams.showTransfers === '1'
 
-  const makeQuery = (withExcluded: boolean) => {
+  const makeQuery = (withExcluded: boolean, withRawName: boolean) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let q: any = supabase
       .from('transactions')
       .select(
-        `id, date, merchant_name, merchant_normalized, amount_cents, pending,
+        `id, date, merchant_name, merchant_normalized, ${withRawName ? 'raw_name, ' : ''}amount_cents, pending,
          category, subcategory, user_category, user_subcategory, manual_override,
          is_internal_transfer,
          accounts(id, name, official_name, nickname, mask, type, subtype, institution)`,
@@ -64,24 +64,56 @@ export default async function TransactionsPage({
     if (searchParams.subcategory) {
       q = q.or(`user_subcategory.eq.${searchParams.subcategory},and(user_subcategory.is.null,subcategory.eq.${searchParams.subcategory})`)
     }
+    if (searchParams.txType === 'income') q = q.lt('amount_cents', 0)
+    if (searchParams.txType === 'charges') q = q.gt('amount_cents', 0)
     return q
   }
 
-  // Try with is_excluded filter; fall back if column doesn't exist yet
-  let result = await makeQuery(true).range(from, from + pageSize - 1)
-  if (result.error) result = await makeQuery(false).range(from, from + pageSize - 1)
+  // Try with is_excluded + raw_name; fall back gracefully if columns don't exist yet
+  let result = await makeQuery(true, true).range(from, from + pageSize - 1)
+  if (result.error) result = await makeQuery(false, true).range(from, from + pageSize - 1)
+  if (result.error) result = await makeQuery(false, false).range(from, from + pageSize - 1)
 
   const transactions = result.data as any[] | null
   const count: number | null = result.count
   const totalPages = Math.ceil((count ?? 0) / pageSize)
 
-  const { data: accounts } = await supabase
-    .from('accounts')
-    .select('id, name, official_name, nickname, mask')
+  // Fetch distinct custom categories/subcategories the user has created
+  const { data: customCatRows } = await supabase
+    .from('transactions')
+    .select('user_category, user_subcategory')
     .eq('user_id', user.id)
-    .order('institution')
+    .not('user_category', 'is', null)
 
-  const hasFilters = !!(searchParams.search || searchParams.account || searchParams.category || searchParams.subcategory || searchParams.dateFrom || searchParams.dateTo || searchParams.amountMin || searchParams.amountMax || showTransfers)
+  const allPlaidKeys = new Set(['INCOME','TRANSFER_IN','TRANSFER_OUT','LOAN_PAYMENTS','BANK_FEES',
+    'ENTERTAINMENT','FOOD_AND_DRINK','GENERAL_MERCHANDISE','HOME_IMPROVEMENT','MEDICAL',
+    'PERSONAL_CARE','GENERAL_SERVICES','GOVERNMENT_AND_NON_PROFIT','TRANSPORTATION','TRAVEL','RENT_AND_UTILITIES'])
+
+  const customCategories = [...new Set(
+    (customCatRows ?? []).map(r => r.user_category).filter((c): c is string => !!c && !allPlaidKeys.has(c))
+  )].sort()
+
+  const customSubcategories = [...new Set(
+    (customCatRows ?? []).map(r => r.user_subcategory).filter((s): s is string => !!s && s !== 'Other' && !/^[A-Z_]+$/.test(s))
+  )].sort()
+
+  const [{ data: accounts }, { data: plaidItems }] = await Promise.all([
+    supabase
+      .from('accounts')
+      .select('id, name, official_name, nickname, mask')
+      .eq('user_id', user.id)
+      .order('institution'),
+    supabase
+      .from('plaid_items')
+      .select('last_synced_at')
+      .eq('user_id', user.id)
+      .order('last_synced_at', { ascending: false })
+      .limit(1),
+  ])
+
+  const lastSyncedAt = (plaidItems?.[0] as any)?.last_synced_at as string | null | undefined
+
+  const hasFilters = !!(searchParams.search || searchParams.account || searchParams.category || searchParams.subcategory || searchParams.dateFrom || searchParams.dateTo || searchParams.amountMin || searchParams.amountMax || showTransfers || searchParams.txType)
 
   return (
     <div className="min-h-screen bg-gray-50 pb-8">
@@ -96,13 +128,21 @@ export default async function TransactionsPage({
           <span className="text-sm text-gray-400">
             {count ?? 0}{hasFilters ? ' results' : ' total'}
           </span>
+          {lastSyncedAt && (
+            <span className="text-xs text-gray-300 ml-1">
+              · updated {new Date(lastSyncedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+            </span>
+          )}
+          <div className="ml-auto">
+            <SyncButton />
+          </div>
         </div>
 
         <UndoBar />
 
         <TransactionFilters accounts={accounts ?? []} showTransfers={showTransfers} />
 
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
           {!transactions?.length ? (
             <div className="py-16 text-center text-sm text-gray-400">No transactions match your filters</div>
           ) : (
@@ -112,7 +152,6 @@ export default async function TransactionsPage({
                 const isCredit = tx.amount_cents < 0
                 const isInternal = tx.is_internal_transfer
                 const isExcluded = (tx as any).is_excluded ?? false
-                const effectivePrimaryKey = (tx.user_category ?? tx.category) as string | null
 
                 return (
                   <div key={tx.id} className={`px-5 py-3 ${isInternal || isExcluded ? 'opacity-50' : ''}`}>
@@ -141,42 +180,35 @@ export default async function TransactionsPage({
                       </>}
                       <span className="text-xs text-gray-300 shrink-0">·</span>
                       <div className="flex flex-col gap-1 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-gray-300 w-20 shrink-0">Category</span>
-                          <CategoryPicker
-                            transactionId={tx.id}
-                            userCategory={tx.user_category}
-                            plaidCategory={tx.category}
-                            plaidSubcategory={tx.subcategory}
-                            merchantName={tx.merchant_name ?? ''}
-                            merchantNormalized={tx.merchant_normalized ?? tx.merchant_name ?? ''}
-                            txDate={tx.date}
-                          />
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-gray-300 w-20 shrink-0">Subcategory</span>
-                          <SubcategoryPicker
-                            transactionId={tx.id}
-                            userSubcategory={tx.user_subcategory ?? null}
-                            plaidSubcategory={tx.subcategory}
-                            effectivePrimaryKey={effectivePrimaryKey}
-                            merchantName={tx.merchant_name ?? ''}
-                            merchantNormalized={tx.merchant_normalized ?? tx.merchant_name ?? ''}
-                            txDate={tx.date}
-                          />
-                        </div>
+                        <CategorySubcategoryPickers
+                          transactionId={tx.id}
+                          userCategory={tx.user_category}
+                          plaidCategory={tx.category}
+                          plaidSubcategory={tx.subcategory}
+                          userSubcategory={tx.user_subcategory ?? null}
+                          merchantName={tx.merchant_name ?? ''}
+                          merchantNormalized={tx.merchant_normalized ?? tx.merchant_name ?? ''}
+                          txDate={tx.date}
+                          customCategories={customCategories}
+                          customSubcategories={customSubcategories}
+                        />
                         {!isInternal && tx.amount_cents > 0 && (
-                          <div className="flex items-center gap-1.5 mt-1">
-                            <span className="text-xs text-gray-300 w-20 shrink-0"></span>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <TransactionSplitButton
-                                transactionId={tx.id}
-                                transactionAmountCents={tx.amount_cents}
-                                merchantName={tx.merchant_name ?? 'Transaction'}
-                              />
-                              <ExcludeButton transactionId={tx.id} isExcluded={isExcluded} />
+                          <details className="mt-0.5">
+                            <summary className="text-[10px] text-gray-300 cursor-pointer select-none hover:text-gray-400 list-none w-fit [&::-webkit-details-marker]:hidden">
+                              · more
+                            </summary>
+                            <div className="flex items-center gap-1.5 mt-1.5">
+                              <span className="w-20 shrink-0"></span>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <TransactionSplitButton
+                                  transactionId={tx.id}
+                                  transactionAmountCents={tx.amount_cents}
+                                  merchantName={tx.merchant_name ?? 'Transaction'}
+                                />
+                                <ExcludeButton transactionId={tx.id} isExcluded={isExcluded} />
+                              </div>
                             </div>
-                          </div>
+                          </details>
                         )}
                       </div>
                     </div>

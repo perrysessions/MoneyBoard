@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { PLAID_PRIMARY_CATEGORIES, PRIMARY_LABELS, formatCategory } from '@/lib/categories'
-import { ChevronDown, X, Check } from 'lucide-react'
+import { ChevronDown, X, Search } from 'lucide-react'
 import { addUndoEntry } from '@/lib/undoHistory'
 
 type Scope = 'single' | 'this_and_future' | 'all_past' | 'all'
@@ -16,39 +16,65 @@ interface Props {
   merchantNormalized: string
   txDate: string
   onSaved?: () => void
+  onCategoryChange?: (newCategory: string | null) => void
+  customCategories?: string[]
 }
 
 export function CategoryPicker({
   transactionId, userCategory, plaidCategory, plaidSubcategory,
-  merchantName, merchantNormalized, txDate, onSaved,
+  merchantName, merchantNormalized, txDate, onSaved, onCategoryChange, customCategories = [],
 }: Props) {
   const [value, setValue] = useState<string | null>(userCategory)
   const [pending, setPending] = useState<string | null | undefined>(undefined)
-  const [showCustom, setShowCustom] = useState(false)
-  const [customText, setCustomText] = useState('')
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
   const [saving, setSaving] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const isOverridden = !!value
 
-  const handleSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newVal = e.target.value
-    if (newVal === '__custom__') {
-      setShowCustom(true)
-      setCustomText('')
-      setTimeout(() => inputRef.current?.focus(), 0)
-      return
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setQuery('')
+      }
     }
-    const resolved = newVal || null
-    if (resolved === value) return
-    setPending(resolved)
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const openDropdown = () => {
+    setOpen(true)
+    setQuery('')
+    setTimeout(() => inputRef.current?.focus(), 0)
   }
 
-  const confirmCustom = () => {
-    const trimmed = customText.trim()
-    if (!trimmed) return
-    setShowCustom(false)
-    setPending(trimmed)
+  const q = query.trim().toLowerCase()
+
+  // Filter Plaid categories by query
+  const filteredPlaid = PLAID_PRIMARY_CATEGORIES.filter(key =>
+    !q || PRIMARY_LABELS[key].toLowerCase().includes(q)
+  )
+
+  // Filter custom categories by query
+  const filteredCustom = customCategories.filter(c =>
+    !q || c.toLowerCase().includes(q)
+  )
+
+  // Show "Create" when query has text and doesn't match any existing label
+  const exactMatch =
+    PLAID_PRIMARY_CATEGORIES.some(k => PRIMARY_LABELS[k].toLowerCase() === q) ||
+    customCategories.some(c => c.toLowerCase() === q)
+  const showCreate = q.length > 0 && !exactMatch
+
+  const handleSelect = (newVal: string | null) => {
+    setOpen(false)
+    setQuery('')
+    if (newVal === value) return
+    setPending(newVal)
   }
 
   const applyScope = async (scope: Scope) => {
@@ -85,6 +111,7 @@ export function CategoryPicker({
       setValue(pending ?? null)
       setPending(undefined)
       onSaved?.()
+      onCategoryChange?.(pending ?? null)
     }
 
     setSaving(false)
@@ -92,33 +119,11 @@ export function CategoryPicker({
 
   const cancelScope = () => setPending(undefined)
 
-  // Custom text input mode
-  if (showCustom) {
-    return (
-      <div className="flex items-center gap-1.5">
-        <input
-          ref={inputRef}
-          type="text"
-          value={customText}
-          onChange={e => setCustomText(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === 'Enter') confirmCustom()
-            if (e.key === 'Escape') setShowCustom(false)
-          }}
-          placeholder="Category name…"
-          className="text-xs px-2 py-0.5 rounded-full border border-blue-300 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400 w-32"
-        />
-        <button onClick={confirmCustom} className="text-green-600 hover:text-green-700">
-          <Check className="h-3 w-3" />
-        </button>
-        <button onClick={() => setShowCustom(false)} className="text-gray-400 hover:text-gray-600">
-          <X className="h-3 w-3" />
-        </button>
-      </div>
-    )
-  }
+  const displayLabel = value
+    ? (PRIMARY_LABELS[value] ?? value)
+    : formatCategory(plaidCategory)
 
-  // Scope panel
+  // Scope confirmation panel
   if (pending !== undefined) {
     return (
       <div className="flex flex-col gap-1.5 w-full mt-1">
@@ -152,31 +157,88 @@ export function CategoryPicker({
   }
 
   return (
-    <div className="flex items-center gap-1.5">
-      <div className="relative inline-flex items-center">
-        <select
-          value={value ?? ''}
-          onChange={handleSelect}
-          disabled={saving}
-          title={isOverridden ? 'You set this category' : 'Override category'}
-          className={`text-xs pr-5 pl-2 py-0.5 rounded-full border appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-400
-            ${isOverridden
-              ? 'bg-blue-50 border-blue-200 text-blue-700'
-              : 'bg-gray-50 border-gray-200 text-gray-600'
-            }`}
-        >
-          <option value="">{formatCategory(plaidCategory)}</option>
-          {PLAID_PRIMARY_CATEGORIES.map(key => (
-            <option key={key} value={key}>{PRIMARY_LABELS[key]}</option>
-          ))}
-          {value && !PLAID_PRIMARY_CATEGORIES.includes(value) && (
-            <option value={value}>{value}</option>
-          )}
-          <option disabled>──────────</option>
-          <option value="__custom__">✏ Custom…</option>
-        </select>
-        <ChevronDown className="absolute right-1 h-3 w-3 text-gray-400 pointer-events-none" />
-      </div>
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        disabled={saving}
+        onClick={openDropdown}
+        className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-400 max-w-[200px]
+          ${isOverridden
+            ? 'bg-blue-50 border-blue-200 text-blue-700'
+            : 'bg-gray-50 border-gray-200 text-gray-600'
+          }`}
+      >
+        <span className="truncate">{displayLabel}</span>
+        <ChevronDown className="h-3 w-3 shrink-0 text-gray-400" />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 left-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-gray-100 flex items-center gap-2">
+            <Search className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search categories…"
+              className="flex-1 text-xs focus:outline-none bg-transparent"
+            />
+            {query && (
+              <button onClick={() => setQuery('')}>
+                <X className="h-3 w-3 text-gray-400" />
+              </button>
+            )}
+          </div>
+          <ul className="max-h-52 overflow-y-auto">
+            {/* Clear option */}
+            {!q && value && (
+              <li
+                onMouseDown={() => handleSelect(null)}
+                className="px-3 py-2 text-xs cursor-pointer hover:bg-gray-50 text-gray-400 italic"
+              >
+                Clear override
+              </li>
+            )}
+            {filteredPlaid.map(key => (
+              <li
+                key={key}
+                onMouseDown={() => handleSelect(key)}
+                className={`px-3 py-2 text-xs cursor-pointer hover:bg-blue-50 ${value === key ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'}`}
+              >
+                {PRIMARY_LABELS[key]}
+              </li>
+            ))}
+            {filteredCustom.length > 0 && (
+              <>
+                <li className="px-3 pt-2 pb-1 text-[10px] font-medium text-gray-400 uppercase tracking-wide border-t border-gray-100">
+                  Custom
+                </li>
+                {filteredCustom.map(cat => (
+                  <li
+                    key={cat}
+                    onMouseDown={() => handleSelect(cat)}
+                    className={`px-3 py-2 text-xs cursor-pointer hover:bg-blue-50 ${value === cat ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'}`}
+                  >
+                    {cat}
+                  </li>
+                ))}
+              </>
+            )}
+            {showCreate && (
+              <li
+                onMouseDown={() => handleSelect(query.trim())}
+                className="px-3 py-2 text-xs cursor-pointer hover:bg-blue-50 text-blue-600 font-medium border-t border-gray-100"
+              >
+                Create &ldquo;{query.trim()}&rdquo;
+              </li>
+            )}
+            {filteredPlaid.length === 0 && !showCreate && (
+              <li className="px-3 py-2 text-xs text-gray-400">No results</li>
+            )}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }
