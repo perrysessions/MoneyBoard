@@ -59,8 +59,8 @@ app/
   auth/confirm/route.ts              # email confirmation callback
   login/page.tsx
   signup/page.tsx
-  dashboard/page.tsx                 # overview: stat cards, connected banks, transactions count
-  dashboard/transactions/page.tsx    # paginated transaction list with splits, category/subcategory pickers
+  dashboard/page.tsx                 # overview: stat cards (Total Income links to transactions?txType=income), connected banks, transactions count
+  dashboard/transactions/page.tsx    # paginated transaction list with splits, category/subcategory pickers, sync button, last-synced timestamp
   dashboard/charts/page.tsx          # pie chart + line chart (Recharts)
   dashboard/limits/page.tsx          # spending limits with category/subcategory/merchant targeting
   dashboard/chat/page.tsx            # AI chat with session history and markdown rendering
@@ -68,7 +68,7 @@ app/
   api/plaid/
     create-link-token/route.ts       # creates Plaid Link token
     exchange-token/route.ts          # exchanges public token, handles re-linking
-    sync/route.ts                    # syncs all items via transactionsSync cursor, detects internal transfers
+    sync/route.ts                    # syncs all items via transactionsSync cursor, stores raw_name, detects internal transfers, updates last_synced_at
   api/accounts/nickname/route.ts     # PATCH — set/clear account nickname
   api/categorize/route.ts            # POST — Gemini AI categorization with merchant cache
   api/transactions/
@@ -99,10 +99,11 @@ components/
   CategorizeButton.tsx               # calls /api/categorize, shows result/error inline
   BottomNav.tsx                      # 5-tab fixed bottom nav
   ChartsView.tsx                     # client component: pie + line charts with presets
-  SpendingLimitsView.tsx             # spending limits CRUD; SubcategorySearch combobox for subcategory type
+  SpendingLimitsView.tsx             # spending limits CRUD; SubcategorySearch combobox for subcategory type; shows Category/Subcategory/Merchant as clickable links to filtered transactions
   ChatView.tsx                       # AI chat: session sidebar, markdown rendering, usage meter
   TransactionSplitButton.tsx         # inline split UI per transaction (scissors button → form)
-  TransactionFilters.tsx             # filter bar for transactions page
+  TransactionFilters.tsx             # filter bar for transactions page; includes All/Charges/Income type pills
+  CategorySubcategoryPickers.tsx     # combined category + subcategory picker wrapper used in transactions list
   UndoBar.tsx                        # undo last category change
   AppHeader.tsx                      # top header with logout
   ui/                                # shadcn: button, input, label, card, badge
@@ -117,13 +118,16 @@ accounts(id, user_id, plaid_item_id, plaid_account_id, institution, name, offici
          nickname, mask, type, subtype)
 
 transactions(id, user_id, account_id, plaid_transaction_id, date, amount_cents,
-             merchant_name, merchant_normalized, category, subcategory, pending,
+             raw_name, merchant_name, merchant_normalized, category, subcategory, pending,
              ai_category, user_category, user_subcategory, manual_override, is_internal_transfer,
              is_excluded)
+  -- raw_name: raw bank string from Plaid t.name (before merchant normalization)
+  -- Migration: ALTER TABLE transactions ADD COLUMN IF NOT EXISTS raw_name text;
   -- is_excluded: user-toggled; hides transaction from all spend calculations (health share bills etc.)
   -- Migration: ALTER TABLE transactions ADD COLUMN IF NOT EXISTS is_excluded boolean NOT NULL DEFAULT false;
   -- category/subcategory = Plaid's personal_finance_category (primary/detailed)
   -- ai_category = Gemini result; user_category/user_subcategory = manual overrides (manual_override=true)
+  -- manual_override is NOT reset on re-sync (intentionally omitted from upsert object)
 
 merchant_categories(id, user_id, merchant_normalized, category)
   -- cache: each unique merchant only hits Gemini once ever
@@ -157,7 +161,8 @@ receipt_items(id, receipt_id, description, amount_cents, ai_category, manual_ove
 ## Key logic / gotchas
 - **Chase re-linking:** Chase rotates plaid_account_id on every re-link. Match accounts by institution+mask+type, not plaid_account_id. Delete old plaid_items by institution_id+user_id before inserting new one.
 - **Internal transfer detection:** After each sync, reset all TRANSFER_IN/OUT flags, re-match TRANSFER_OUT (positive) with TRANSFER_IN (negative) across different accounts with same amount within 2 days → is_internal_transfer=true. Handles $1,300/month Chase→Wells transfer.
-- **Spending calc:** Exclude pending=true, is_internal_transfer=true, amount_cents≤0. Total spend = all outflows. CC spend = type='credit' outflows. Cash out = type='depository' outflows.
+- **Spending calc (dashboard):** Exclude pending=true, is_excluded=true, is_internal_transfer=true, amount_cents≤0. Total spend = all outflows. CC spend = type='credit' outflows. Cash out = type='depository' outflows.
+- **Spending calc (limits page):** Includes pending transactions (intentional — gives real-time budget view). Excludes is_internal_transfer=true and amount_cents≤0.
 - **Gemini quota:** Use `gemini-2.5-flash`. perrysessions@gmail.com Google account is on paid Cloud billing with $0 credits — always use wife's account API key. merchant_categories table caches results so each merchant only hits Gemini once.
 - **PlaidLinkButton:** Must preload token on mount (not on click) to avoid popup blocker. Call open() synchronously in the click handler.
 - **Plaid history:** Chase/Wells Fargo only provide ~3 months of transaction history via Plaid API regardless of what's requested. Historical data before that requires CSV import (planned Chunk 7).
@@ -165,6 +170,12 @@ receipt_items(id, receipt_id, description, amount_cents, ai_category, manual_ove
 - **Subcategory keys:** Plaid uses keys like `FOOD_AND_DRINK_RESTAURANT` (not `RESTAURANTS`). All known keys are in `lib/categories.ts` SUBCATEGORY_LABELS. `formatCategory()` returns custom user labels as-is (bypasses the underscore→titlecase transform for non-Plaid strings).
 - **AI chat multi-turn:** Uses `model.generateContent({ contents: [...] })` with full history array (not `startChat()`). System context injected as first user/model exchange. Last 20 messages fetched per session.
 - **SubcategorySearch in limits:** Uses `<button type="button">` trigger (not div) so it appears in browser accessibility tree and click events fire reliably.
+- **Spending limits category dropdown:** Includes both standard Plaid primary categories and any custom user_category values found in that user's transactions. Custom categories accumulate spend via `tx.user_category ?? tx.category` in the categorySpend map.
+- **Spending limits order:** Use `.order('id', { ascending: true })` — the spending_limits table has no created_at column. Using a non-existent column returns `{ data: null }` silently, which `?? []` masks as an empty list.
+- **Transaction type filter:** `txType=income` filters `amount_cents < 0` (credits/deposits); `txType=charges` filters `amount_cents > 0` (outflows). Plaid signs amounts so debits are positive, credits are negative.
+- **Plaid sync does not reset manual overrides:** `manual_override` and `user_category`/`user_subcategory` are intentionally omitted from the upsert object so re-syncing never overwrites the user's manual category choices.
+- **Plaid refresh cadence:** Plaid fetches from Chase/Wells Fargo ~1–4 times per day on their own schedule (not published). Calling sync more often is safe but won't return newer data until Plaid has fetched it. Webhooks (`SYNC_UPDATES_AVAILABLE`) are the right long-term solution for auto-sync — planned for a future chunk.
+- **Walmart gas vs. grocery:** Chase sends "Walmart" as the merchant string for all Walmart purchases with no MCC data. Plaid's ML categorization also sees only "Walmart." Use custom user_category/user_subcategory overrides to distinguish.
 
 ## Chunk plan
 - [x] **Chunk 1** — Scaffold, Supabase auth, passcode gate, Vercel deploy ✅
@@ -173,8 +184,10 @@ receipt_items(id, receipt_id, description, amount_cents, ai_category, manual_ove
 - [x] **Chunk 4** — Charts: pie by category (with toggle-off, persisted in localStorage) + line trend with presets (30D/3M/6M/1Y/2Y/All) ✅
 - [x] **Chunk 5** — Spending limits: category/subcategory/merchant targeting, progress bars, pause/resume, subcategory combobox search ✅
 - [x] **Chunk 5b** — Transaction splits (inline split form per transaction), AI chat session history + markdown rendering, custom category/subcategory entry ✅
+- [x] **Chunk 5c** — UX polish: All/Charges/Income filter pills, "· more" toggle for Split/Exclude, sync button on transactions page, last-synced timestamp, income card links to filtered transactions, category/subcategory links on limit cards, custom categories in limits dropdown, raw_name stored on sync, pending transactions included in limits spend ✅
 - [ ] **Chunk 6** — Receipt scanner (photo + PDF → Gemini Vision → itemized line items)
 - [ ] **Chunk 7** — CSV statement import for historical data (Chase + Wells Fargo export CSVs; AI maps columns → schema; fills in pre-Plaid history)
+- [ ] **Chunk 8** — Plaid webhooks (`SYNC_UPDATES_AVAILABLE`) for automatic sync when bank data refreshes; webhook URL: `https://money-board.vercel.app/api/plaid/webhook`
 
 ## Design rules
 - Light mode only, never dark

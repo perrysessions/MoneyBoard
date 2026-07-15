@@ -7,7 +7,7 @@ import { PLAID_PRIMARY_CATEGORIES, PRIMARY_LABELS, SUBCATEGORY_LABELS, getSubcat
 
 type Account = { id: string; name: string; official_name: string | null; nickname: string | null; mask: string | null }
 
-export function TransactionFilters({ accounts, showTransfers }: { accounts: Account[]; showTransfers?: boolean }) {
+export function TransactionFilters({ accounts, showTransfers, showExcluded }: { accounts: Account[]; showTransfers?: boolean; showExcluded?: boolean }) {
   const router = useRouter()
   const pathname = usePathname()
   const sp = useSearchParams()
@@ -25,7 +25,7 @@ export function TransactionFilters({ accounts, showTransfers }: { accounts: Acco
     router.push(`${pathname}?${params.toString()}`)
   }, [sp, router, pathname])
 
-  const activeCount = ['search', 'account', 'category', 'subcategory', 'dateFrom', 'dateTo', 'amountMin', 'amountMax', 'showTransfers', 'txType']
+  const activeCount = ['search', 'account', 'category', 'subcategory', 'dateFrom', 'dateTo', 'amountMin', 'amountMax', 'showTransfers', 'showExcluded', 'txType']
     .filter(k => sp.has(k)).length
 
   const txType = get('txType')
@@ -189,7 +189,7 @@ export function TransactionFilters({ accounts, showTransfers }: { accounts: Acco
             />
           </div>
 
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-2 flex flex-col gap-2">
             <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
@@ -198,7 +198,17 @@ export function TransactionFilters({ accounts, showTransfers }: { accounts: Acco
                 className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <span className="text-sm text-gray-600">Show bank transfers</span>
-              <span className="text-xs text-gray-400">(hidden by default — not expenses)</span>
+              <span className="text-xs text-gray-400">(hidden by default)</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={sp.get('showExcluded') === '1'}
+                onChange={e => push({ showExcluded: e.target.checked ? '1' : '' })}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span className="text-sm text-gray-600">Show excluded transactions</span>
+              <span className="text-xs text-gray-400">(hidden by default)</span>
             </label>
           </div>
         </div>

@@ -5,7 +5,12 @@ import { PLAID_PRIMARY_CATEGORIES, PRIMARY_LABELS, formatCategory } from '@/lib/
 import { ChevronDown, X, Search } from 'lucide-react'
 import { addUndoEntry } from '@/lib/undoHistory'
 
-type Scope = 'single' | 'this_and_future' | 'all_past' | 'all'
+type Scope = 'single' | 'all_past' | 'all'
+
+function suggestPattern(merchantNormalized: string): string {
+  const m = merchantNormalized.match(/^(.*?)\s+\d/)
+  return m ? m[1].trim() : merchantNormalized
+}
 
 interface Props {
   transactionId: string
@@ -26,6 +31,7 @@ export function CategoryPicker({
 }: Props) {
   const [value, setValue] = useState<string | null>(userCategory)
   const [pending, setPending] = useState<string | null | undefined>(undefined)
+  const [pattern, setPattern] = useState('')
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [saving, setSaving] = useState(false)
@@ -74,6 +80,7 @@ export function CategoryPicker({
     setOpen(false)
     setQuery('')
     if (newVal === value) return
+    setPattern(suggestPattern(merchantNormalized))
     setPending(newVal)
   }
 
@@ -90,6 +97,7 @@ export function CategoryPicker({
         value: pending,
         scope,
         merchant_normalized: merchantNormalized,
+        pattern: scope !== 'single' ? pattern : undefined,
         date: txDate,
       }),
     })
@@ -99,9 +107,8 @@ export function CategoryPicker({
       const label = pending ? (PRIMARY_LABELS[pending] ?? pending) : 'Cleared'
       const scopeLabel =
         scope === 'single' ? 'this transaction' :
-        scope === 'this_and_future' ? `this + future ${merchantName}` :
-        scope === 'all_past' ? `all past ${merchantName}` :
-        `all ${merchantName}`
+        scope === 'all_past' ? `all past "${pattern}"` :
+        `all matching "${pattern}"`
 
       addUndoEntry({
         description: `Set category to "${label}" for ${scopeLabel}`,
@@ -126,8 +133,8 @@ export function CategoryPicker({
   // Scope confirmation panel
   if (pending !== undefined) {
     return (
-      <div className="flex flex-col gap-1.5 w-full mt-1">
-        <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex flex-col gap-2 w-full mt-1">
+        <div className="flex items-center gap-1.5">
           <span className="text-xs text-gray-500">
             Apply &ldquo;{pending ? (PRIMARY_LABELS[pending] ?? pending) : 'clear'}&rdquo; to:
           </span>
@@ -135,16 +142,24 @@ export function CategoryPicker({
             <X className="h-3 w-3" />
           </button>
         </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-400 shrink-0">Vendor pattern:</span>
+          <input
+            type="text"
+            value={pattern}
+            onChange={e => setPattern(e.target.value)}
+            className="flex-1 text-xs border border-gray-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-300 min-w-0"
+          />
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {([
             ['single', 'Just this'],
-            ['this_and_future', `This + future ${merchantName}`],
-            ['all_past', `All past ${merchantName}`],
-            ['all', `All ${merchantName}`],
+            ['all_past', 'All past'],
+            ['all', 'All matching — now & future'],
           ] as [Scope, string][]).map(([s, label]) => (
             <button
               key={s}
-              disabled={saving}
+              disabled={saving || (s !== 'single' && !pattern.trim())}
               onClick={() => applyScope(s)}
               className="text-xs px-2.5 py-1 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 disabled:opacity-50 transition-colors"
             >

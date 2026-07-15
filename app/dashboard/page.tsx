@@ -4,6 +4,7 @@ import { TrendingUp, TrendingDown, CreditCard, Landmark } from 'lucide-react'
 import Link from 'next/link'
 import { AppHeader } from '@/components/AppHeader'
 import { DashboardDateFilter } from '@/components/DashboardDateFilter'
+import { OverviewChart } from '@/components/OverviewChart'
 import { Suspense } from 'react'
 
 const fmt = (cents: number) => {
@@ -69,6 +70,7 @@ export default async function DashboardPage({
       .eq('is_internal_transfer', false)
       .gt('amount_cents', 0)
     if (excludeCol) q = q.eq('is_excluded', false)
+    q = q.or('and(user_category.is.null,category.is.null),and(user_category.is.null,category.not.in.(TRANSFER_IN,TRANSFER_OUT)),and(user_category.not.is.null,user_category.not.in.(TRANSFER_IN,TRANSFER_OUT))')
     if (from) q = q.gte('date', from)
     if (to) q = q.lte('date', to)
     return q
@@ -83,16 +85,32 @@ export default async function DashboardPage({
       .eq('is_internal_transfer', false)
       .lt('amount_cents', 0)
     if (excludeCol) q = q.eq('is_excluded', false)
+    q = q.or('and(user_category.is.null,category.is.null),and(user_category.is.null,category.not.in.(TRANSFER_IN,TRANSFER_OUT)),and(user_category.not.is.null,user_category.not.in.(TRANSFER_IN,TRANSFER_OUT))')
+    if (from) q = q.gte('date', from)
+    if (to) q = q.lte('date', to)
+    return q
+  }
+
+  const buildChartQuery = (excludeCol: boolean) => {
+    let q = supabase
+      .from('transactions')
+      .select('date, amount_cents')
+      .eq('user_id', user.id)
+      .eq('pending', false)
+      .eq('is_internal_transfer', false)
+    if (excludeCol) q = q.eq('is_excluded', false)
+    q = q.or('and(user_category.is.null,category.is.null),and(user_category.is.null,category.not.in.(TRANSFER_IN,TRANSFER_OUT)),and(user_category.not.is.null,user_category.not.in.(TRANSFER_IN,TRANSFER_OUT))')
     if (from) q = q.gte('date', from)
     if (to) q = q.lte('date', to)
     return q
   }
 
   // Try with is_excluded filter; fall back gracefully if column doesn't exist yet
-  let [spendResult, incomeResult, countResult] = await Promise.all([
+  let [spendResult, incomeResult, countResult, chartResult] = await Promise.all([
     buildSpendQuery(true),
     buildIncomeQuery(true),
     supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+    buildChartQuery(true),
   ])
 
   if (spendResult.error || incomeResult.error) {
@@ -101,10 +119,14 @@ export default async function DashboardPage({
       buildIncomeQuery(false),
     ])
   }
+  if (chartResult.error) {
+    chartResult = await buildChartQuery(false)
+  }
 
   const txData = spendResult.data
   const incomeData = incomeResult.data
   const txCount = countResult.count
+  const chartTxs = (chartResult.data ?? []) as { date: string; amount_cents: number }[]
 
   const allTx = txData ?? []
   const totalSpend = allTx.reduce((s, t) => s + t.amount_cents, 0)
@@ -130,16 +152,18 @@ export default async function DashboardPage({
         </Suspense>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Total Spend</span>
-              <TrendingUp className="h-4 w-4 text-gray-300" />
+          <Link href={`/dashboard/transactions?txType=charges${from ? `&dateFrom=${from}` : ''}${to ? `&dateTo=${to}` : ''}`} className="block">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Total Spend</span>
+                <TrendingUp className="h-4 w-4 text-gray-300" />
+              </div>
+              <p className="text-2xl font-semibold text-gray-900">{totalSpend > 0 ? fmt(totalSpend) : '—'}</p>
+              <p className="text-xs text-gray-400 mt-1">All outflows</p>
             </div>
-            <p className="text-2xl font-semibold text-gray-900">{totalSpend > 0 ? fmt(totalSpend) : '—'}</p>
-            <p className="text-xs text-gray-400 mt-1">All outflows</p>
-          </div>
+          </Link>
 
-          <Link href="/dashboard/transactions?txType=income" className="block">
+          <Link href={`/dashboard/transactions?txType=income${from ? `&dateFrom=${from}` : ''}${to ? `&dateTo=${to}` : ''}`} className="block">
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">Total Income</span>
@@ -168,6 +192,8 @@ export default async function DashboardPage({
             <p className="text-xs text-gray-400 mt-1">From checking / savings</p>
           </div>
         </div>
+
+        <OverviewChart transactions={chartTxs} dateFrom={from} dateTo={to} />
 
         <Link href="/dashboard/transactions" className="block">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow">

@@ -33,6 +33,7 @@ export default async function LimitsPage() {
       .select('amount_cents, category, user_category, subcategory, user_subcategory, merchant_normalized')
       .eq('user_id', user.id)
       .eq('is_internal_transfer', false)
+      .or('and(user_category.is.null,category.is.null),and(user_category.is.null,category.not.in.(TRANSFER_IN,TRANSFER_OUT)),and(user_category.not.is.null,user_category.not.in.(TRANSFER_IN,TRANSFER_OUT))')
       .gte('date', monthStart)
       .lt('date', monthEnd)
       .gt('amount_cents', 0),

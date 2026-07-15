@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { PLAID_PRIMARY_CATEGORIES } from '@/lib/categories'
 
-export type Scope = 'single' | 'this_and_future' | 'all_past' | 'all'
+export type Scope = 'single' | 'all_past' | 'all'
 
 export interface OldValue {
   id: string
@@ -20,12 +20,12 @@ export async function PATCH(req: Request) {
     transaction_id,
     field,           // 'category' | 'subcategory'
     value,           // new value (string | null)
-    scope,           // 'single' | 'this_and_future' | 'all_past' | 'all'
+    scope,           // 'single' | 'all_past' | 'all'
     merchant_normalized,
-    date,            // transaction date string, used for scoping
+    pattern,         // vendor pattern for ILIKE matching (all/all_past scopes)
+    date,            // transaction date string, used for all_past scoping
   } = await req.json()
 
-  // Fetch old values for undo before applying changes
   let affectedIds: string[] = []
 
   if (!scope || scope === 'single') {
@@ -35,15 +35,17 @@ export async function PATCH(req: Request) {
       .from('transactions')
       .select('id')
       .eq('user_id', user.id)
-      .eq('merchant_normalized', merchant_normalized)
 
-    if (scope === 'this_and_future') q = q.gte('date', date)
-    else if (scope === 'all_past') q = q.lte('date', date)
-    // 'all' — no date filter
+    if (pattern?.trim()) {
+      q = q.ilike('merchant_normalized', `%${pattern.trim()}%`)
+    } else {
+      q = q.eq('merchant_normalized', merchant_normalized)
+    }
+
+    if (scope === 'all_past') q = q.lte('date', date)
 
     const { data } = await q
     affectedIds = (data ?? []).map((r: any) => r.id)
-    // Always include the triggering transaction
     if (!affectedIds.includes(transaction_id)) affectedIds.push(transaction_id)
   }
 
@@ -68,12 +70,10 @@ export async function PATCH(req: Request) {
       user_subcategory: value ?? null,
     }
   } else {
-    // category field
     const isCustomCategory = value !== null && !PLAID_PRIMARY_CATEGORIES.includes(value)
     updatePayload = {
       user_category: value ?? null,
       manual_override: !!value,
-      // custom categories auto-get "Other" subcategory; Plaid categories and clears reset it
       user_subcategory: isCustomCategory ? 'Other' : null,
     }
   }
@@ -85,6 +85,15 @@ export async function PATCH(req: Request) {
     .eq('user_id', user.id)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Store pattern override for future syncs when scope is 'all' and field is 'category'
+  if (scope === 'all' && field === 'category' && pattern?.trim()) {
+    await supabase.from('merchant_overrides').upsert({
+      user_id: user.id,
+      pattern: pattern.trim(),
+      category: value ?? null,
+    }, { onConflict: 'user_id,pattern' })
+  }
 
   return NextResponse.json({ ok: true, affectedCount: affectedIds.length, oldValues })
 }

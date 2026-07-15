@@ -36,12 +36,25 @@ export async function POST() {
         (accounts ?? []).map(a => [a.plaid_account_id, a.id])
       )
 
-      const toUpsert = [...added, ...modified].map(t => ({
+      const batch = [...added, ...modified]
+      const plaidIds = batch.map(t => t.transaction_id)
+
+      // Find any existing transactions with active splits — we must not overwrite their amount_cents
+      const { data: splitProtected } = plaidIds.length ? await supabase
+        .from('transactions')
+        .select('plaid_transaction_id')
+        .in('plaid_transaction_id', plaidIds)
+        .eq('has_splits', true) : { data: [] }
+
+      const protectedIds = new Set((splitProtected ?? []).map((r: any) => r.plaid_transaction_id))
+
+      const toUpsert = batch.map(t => ({
         user_id: user.id,
         account_id: accountMap[t.account_id] ?? null,
         plaid_transaction_id: t.transaction_id,
         date: t.date,
-        amount_cents: Math.round(t.amount * 100),
+        // Only include amount_cents for rows that don't have active splits
+        ...(!protectedIds.has(t.transaction_id) ? { amount_cents: Math.round(t.amount * 100) } : {}),
         raw_name: t.name,
         merchant_name: t.merchant_name ?? t.name,
         merchant_normalized: (t.merchant_name ?? t.name).toLowerCase().trim(),
@@ -69,11 +82,32 @@ export async function POST() {
     await supabase.from('plaid_items').update({ cursor, last_synced_at: new Date().toISOString() }).eq('id', item.id)
   }
 
+  // Apply merchant pattern overrides to any transactions that don't have a manual category yet
+  await applyMerchantOverrides(supabase, user.id)
+
   // Detect internal transfers: match TRANSFER_OUT with TRANSFER_IN across
   // different accounts owned by the same user, same amount, within 2 days.
   await detectInternalTransfers(supabase, user.id)
 
   return NextResponse.json({ synced: totalSynced })
+}
+
+async function applyMerchantOverrides(supabase: any, userId: string) {
+  const { data: overrides } = await supabase
+    .from('merchant_overrides')
+    .select('pattern, category')
+    .eq('user_id', userId)
+
+  if (!overrides?.length) return
+
+  for (const override of overrides) {
+    await supabase
+      .from('transactions')
+      .update({ user_category: override.category, manual_override: true })
+      .eq('user_id', userId)
+      .ilike('merchant_normalized', `%${override.pattern}%`)
+      .is('user_category', null)
+  }
 }
 
 async function detectInternalTransfers(supabase: any, userId: string) {

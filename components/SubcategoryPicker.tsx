@@ -5,7 +5,7 @@ import { SUBCATEGORY_LABELS, getSubcategoriesForPrimary, formatCategory } from '
 import { ChevronDown, X, Search } from 'lucide-react'
 import { addUndoEntry } from '@/lib/undoHistory'
 
-type Scope = 'single' | 'this_and_future' | 'all_past' | 'all'
+type Scope = 'single' | 'all_past' | 'all'
 
 interface Props {
   transactionId: string
@@ -25,6 +25,7 @@ export function SubcategoryPicker({
 }: Props) {
   const [value, setValue] = useState<string | null>(userSubcategory)
   const [pending, setPending] = useState<string | null | undefined>(undefined)
+  const [pattern, setPattern] = useState('')
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [saving, setSaving] = useState(false)
@@ -62,8 +63,16 @@ export function SubcategoryPicker({
     !q || (SUBCATEGORY_LABELS[key] ?? key).toLowerCase().includes(q)
   )
 
+  // Deduplicate Plaid keys that map to the same display label
+  const seenLabels = new Set<string>()
+  const dedupedKeys = filteredKeys.filter(key => {
+    const label = (SUBCATEGORY_LABELS[key] ?? key).toLowerCase()
+    if (seenLabels.has(label)) return false
+    seenLabels.add(label)
+    return true
+  })
   const filteredCustom = customSubcategories.filter(s =>
-    !q || s.toLowerCase().includes(q)
+    !seenLabels.has(s.toLowerCase()) && (!q || s.toLowerCase().includes(q))
   )
 
   // Show "Create" when query has text and doesn't match any existing label
@@ -72,10 +81,16 @@ export function SubcategoryPicker({
     customSubcategories.some(s => s.toLowerCase() === q)
   const showCreate = q.length > 0 && !exactMatch
 
+  function suggestPattern(merchantNormalized: string): string {
+    const m = merchantNormalized.match(/^(.*?)\s+\d/)
+    return m ? m[1].trim() : merchantNormalized
+  }
+
   const handleSelect = (newVal: string | null) => {
     setOpen(false)
     setQuery('')
     if (newVal === value) return
+    setPattern(suggestPattern(merchantNormalized))
     setPending(newVal)
   }
 
@@ -92,6 +107,7 @@ export function SubcategoryPicker({
         value: pending,
         scope,
         merchant_normalized: merchantNormalized,
+        pattern: scope !== 'single' ? pattern : undefined,
         date: txDate,
       }),
     })
@@ -101,9 +117,8 @@ export function SubcategoryPicker({
       const label = pending ? (SUBCATEGORY_LABELS[pending] ?? pending) : 'Cleared'
       const scopeLabel =
         scope === 'single' ? 'this transaction' :
-        scope === 'this_and_future' ? `this + future ${merchantName}` :
-        scope === 'all_past' ? `all past ${merchantName}` :
-        `all ${merchantName}`
+        scope === 'all_past' ? `all past "${pattern}"` :
+        `all matching "${pattern}"`
 
       addUndoEntry({
         description: `Set subcategory to "${label}" for ${scopeLabel}`,
@@ -127,8 +142,8 @@ export function SubcategoryPicker({
   // Scope confirmation panel
   if (pending !== undefined) {
     return (
-      <div className="flex flex-col gap-1.5 w-full mt-1">
-        <div className="flex items-center gap-1.5 flex-wrap">
+      <div className="flex flex-col gap-2 w-full mt-1">
+        <div className="flex items-center gap-1.5">
           <span className="text-xs text-gray-500">
             Apply &ldquo;{pending ? (SUBCATEGORY_LABELS[pending] ?? pending) : 'clear'}&rdquo; subcategory to:
           </span>
@@ -136,16 +151,24 @@ export function SubcategoryPicker({
             <X className="h-3 w-3" />
           </button>
         </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-400 shrink-0">Vendor pattern:</span>
+          <input
+            type="text"
+            value={pattern}
+            onChange={e => setPattern(e.target.value)}
+            className="flex-1 text-xs border border-gray-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-purple-300 min-w-0"
+          />
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {([
             ['single', 'Just this'],
-            ['this_and_future', `This + future ${merchantName}`],
-            ['all_past', `All past ${merchantName}`],
-            ['all', `All ${merchantName}`],
+            ['all_past', 'All past'],
+            ['all', 'All matching — now & future'],
           ] as [Scope, string][]).map(([s, label]) => (
             <button
               key={s}
-              disabled={saving}
+              disabled={saving || (s !== 'single' && !pattern.trim())}
               onClick={() => applyScope(s)}
               className="text-xs px-2.5 py-1 rounded-lg border border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 disabled:opacity-50 transition-colors"
             >
@@ -201,7 +224,7 @@ export function SubcategoryPicker({
                 Clear override
               </li>
             )}
-            {filteredKeys.map(key => (
+            {dedupedKeys.map(key => (
               <li
                 key={key}
                 onMouseDown={() => handleSelect(key)}
