@@ -40,7 +40,7 @@ export default async function TransactionsPage({
 
   const makeQuery = (withExcluded: boolean, withRawName: boolean) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let q: any = supabase
+    let q: any = (supabase as any)
       .from('transactions')
       .select(
         `id, date, merchant_name, merchant_normalized, ${withRawName ? 'raw_name, ' : ''}amount_cents, pending,
