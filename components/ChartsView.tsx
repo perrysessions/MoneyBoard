@@ -11,6 +11,7 @@ import {
 type Tx = {
   date: string
   amount_cents: number
+  merchant_name: string
   category: string      // display name
   subcategory: string   // display name
   categoryKey: string   // raw Plaid key for URL filter
@@ -134,18 +135,31 @@ export function ChartsView({ transactions, earliest, latest }: { transactions: T
   // Use safe server-side defaults; restore from localStorage after hydration to avoid mismatch
   const [piePreset, setPiePreset] = useState(1)
   const [linePreset, setLinePreset] = useState(5)
+  const [tablePreset, setTablePreset] = useState(1)
   const [lineCategory, setLineCategory] = useState('__all__')
   const [useSubcategory, setUseSubcategory] = useState(false)
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set())
+  const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     const sub = ls('charts-use-subcategory', false)
     setPiePreset(ls('charts-pie-preset', 1))
     setLinePreset(ls('charts-line-preset', 5))
+    setTablePreset(ls('charts-table-preset', 1))
     setLineCategory(ls('charts-line-category', '__all__'))
     setUseSubcategory(sub)
     setHiddenCategories(new Set(ls<string[]>(sub ? 'charts-hidden-sub' : 'charts-hidden-primary', [])))
   }, [])
+
+  const handleTablePreset = (i: number) => { setTablePreset(i); lsSet('charts-table-preset', i) }
+
+  const toggleExpand = (cat: string) => {
+    setExpandedCats(prev => {
+      const next = new Set(prev)
+      if (next.has(cat)) next.delete(cat); else next.add(cat)
+      return next
+    })
+  }
 
   const handlePiePreset = (i: number) => { setPiePreset(i); lsSet('charts-pie-preset', i) }
   const handleLinePreset = (i: number) => { setLinePreset(i); lsSet('charts-line-preset', i) }
@@ -187,6 +201,31 @@ export function ChartsView({ transactions, earliest, latest }: { transactions: T
 
   const lineTxs = useMemo(() => filterByDays(transactions, PRESETS[linePreset].days), [transactions, linePreset])
   const lineData = useMemo(() => groupByMonth(lineTxs, lineCategory, useSubcategory), [lineTxs, lineCategory, useSubcategory])
+
+  const tableTxs = useMemo(() => filterByDays(transactions, PRESETS[tablePreset].days), [transactions, tablePreset])
+
+  // Build category → vendor → {total, count} map
+  const tableData = useMemo(() => {
+    const catMap = new Map<string, Map<string, { total: number; count: number }>>()
+    for (const t of tableTxs) {
+      const cat = getKey(t, useSubcategory)
+      if (!catMap.has(cat)) catMap.set(cat, new Map())
+      const vendorMap = catMap.get(cat)!
+      const vendor = t.merchant_name
+      const existing = vendorMap.get(vendor) ?? { total: 0, count: 0 }
+      vendorMap.set(vendor, { total: existing.total + t.amount_cents, count: existing.count + 1 })
+    }
+    // Sort categories by total desc, vendors within each by total desc
+    return [...catMap.entries()]
+      .map(([cat, vendorMap]) => {
+        const vendors = [...vendorMap.entries()]
+          .map(([name, { total, count }]) => ({ name, total, count }))
+          .sort((a, b) => b.total - a.total)
+        const catTotal = vendors.reduce((s, v) => s + v.total, 0)
+        return { cat, catTotal, vendors }
+      })
+      .sort((a, b) => b.catTotal - a.catTotal)
+  }, [tableTxs, useSubcategory])
 
   const toggleCategory = (cat: string) => {
     setHiddenCategories(prev => {
@@ -324,6 +363,64 @@ export function ChartsView({ transactions, earliest, latest }: { transactions: T
               <Line type="monotone" dataKey="total" stroke="#3b82f6" strokeWidth={2} dot={{ fill: '#3b82f6', r: 3 }} activeDot={{ r: 5 }} />
             </LineChart>
           </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Vendor breakdown table */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+        <div className="flex items-center justify-between mb-5 flex-wrap gap-2">
+          <h2 className="text-sm font-semibold text-gray-900">
+            Vendor Breakdown by {useSubcategory ? 'Subcategory' : 'Category'}
+          </h2>
+          <PresetBar value={tablePreset} onChange={handleTablePreset} />
+        </div>
+
+        {tableData.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-8">No data for this period</p>
+        ) : (
+          <div className="space-y-2">
+            {tableData.map(({ cat, catTotal, vendors }) => {
+              const isExpanded = expandedCats.has(cat)
+              const catIdx = allCategories.indexOf(cat)
+              const color = COLORS[catIdx >= 0 ? catIdx % COLORS.length : 0]
+              return (
+                <div key={cat} className="rounded-xl border border-gray-100 overflow-hidden">
+                  <button
+                    onClick={() => toggleExpand(cat)}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                  >
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                    <span className="text-xs font-semibold text-gray-700 flex-1">{cat}</span>
+                    <span className="text-xs text-gray-400 tabular-nums">{vendors.length} vendor{vendors.length !== 1 ? 's' : ''}</span>
+                    <span className="text-xs font-semibold text-gray-800 tabular-nums ml-2">{fmt(catTotal)}</span>
+                    <span className="text-gray-300 text-xs ml-1">{isExpanded ? '▲' : '▼'}</span>
+                  </button>
+
+                  {isExpanded && (
+                    <div>
+                      <div className="flex items-center gap-2 px-4 py-1.5 border-b border-gray-100 bg-white">
+                        <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide flex-1">Vendor</span>
+                        <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide w-12 text-right">Count</span>
+                        <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide w-16 text-right">Total</span>
+                        <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide w-10 text-right">% Cat</span>
+                      </div>
+                      {vendors.map(v => {
+                        const pct = catTotal > 0 ? Math.round((v.total / catTotal) * 100) : 0
+                        return (
+                          <div key={v.name} className="flex items-center gap-2 px-4 py-2 border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
+                            <span className="text-xs text-gray-700 flex-1 truncate">{v.name}</span>
+                            <span className="text-xs text-gray-400 tabular-nums w-12 text-right">{v.count}×</span>
+                            <span className="text-xs font-medium text-gray-800 tabular-nums w-16 text-right">{fmt(v.total)}</span>
+                            <span className="text-xs text-gray-400 tabular-nums w-10 text-right">{pct}%</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         )}
       </div>
     </div>

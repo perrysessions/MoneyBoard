@@ -12,14 +12,18 @@ export default async function ChartsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const baseQuery = () => supabase
-    .from('transactions')
-    .select('date, amount_cents, category, subcategory, user_category, user_subcategory')
-    .eq('user_id', user.id)
-    .eq('pending', false)
-    .eq('is_internal_transfer', false)
-    .gt('amount_cents', 0)
-    .order('date', { ascending: true })
+  const baseQuery = () => {
+    let q = supabase
+      .from('transactions')
+      .select('date, amount_cents, category, subcategory, user_category, user_subcategory, merchant_name')
+      .eq('user_id', user.id)
+      .eq('pending', false)
+      .eq('is_internal_transfer', false)
+      .gt('amount_cents', 0)
+      .or('and(user_category.is.null,category.is.null),and(user_category.is.null,category.not.in.(TRANSFER_IN,TRANSFER_OUT)),and(user_category.not.is.null,user_category.not.in.(TRANSFER_IN,TRANSFER_OUT))')
+      .order('date', { ascending: true })
+    return q
+  }
 
   let result = await baseQuery().eq('is_excluded', false)
   if (result.error) result = await baseQuery()
@@ -28,6 +32,7 @@ export default async function ChartsPage() {
   const txs = (transactions ?? []).map(t => ({
     date: t.date as string,
     amount_cents: t.amount_cents as number,
+    merchant_name: (t.merchant_name ?? 'Unknown') as string,
     category: effectiveCategory(t.user_category, t.category),
     subcategory: t.user_subcategory
       ? formatCategory(t.user_subcategory)

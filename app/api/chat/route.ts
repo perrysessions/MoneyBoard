@@ -81,56 +81,67 @@ export async function POST(req: Request) {
   threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
   const threeMonthsStr = threeMonthsAgo.toISOString().slice(0, 10)
 
-  const [txThisMonth, txLastMonth, txThreeMonths, accounts, recentTx] = await Promise.all([
-    supabase.from('transactions').select('amount_cents, category, user_category')
+  const [txThisMonth, txLastMonth, txThreeMonths, accounts] = await Promise.all([
+    supabase.from('transactions').select('amount_cents, category, user_category, merchant_name, date, is_excluded')
       .eq('user_id', user.id).eq('pending', false).eq('is_internal_transfer', false).gt('amount_cents', 0).gte('date', thisMonthStr),
-    supabase.from('transactions').select('amount_cents, category, user_category')
+    supabase.from('transactions').select('amount_cents, category, user_category, merchant_name, date, is_excluded')
       .eq('user_id', user.id).eq('pending', false).eq('is_internal_transfer', false).gt('amount_cents', 0).gte('date', lastMonthStr).lt('date', thisMonthStr),
-    supabase.from('transactions').select('amount_cents, category, user_category, date, merchant_name')
-      .eq('user_id', user.id).eq('pending', false).eq('is_internal_transfer', false).gt('amount_cents', 0).gte('date', threeMonthsStr),
+    supabase.from('transactions').select('amount_cents, category, user_category, user_subcategory, subcategory, merchant_name, date, is_excluded')
+      .eq('user_id', user.id).eq('pending', false).eq('is_internal_transfer', false).gte('date', threeMonthsStr),
     supabase.from('accounts').select('name, official_name, nickname, mask, type, subtype, institution').eq('user_id', user.id),
-    supabase.from('transactions').select('date, merchant_name, amount_cents, category, user_category')
-      .eq('user_id', user.id).eq('pending', false).eq('is_internal_transfer', false).order('date', { ascending: false }).limit(10),
   ])
 
   const sumByCategory = (txs: any[]) => {
     const map: Record<string, number> = {}
     for (const t of txs) {
+      if (t.is_excluded) continue
       const cat = effectiveCategory(t.user_category, t.category)
+      if (cat === 'TRANSFER_IN' || cat === 'TRANSFER_OUT') continue
       map[cat] = (map[cat] ?? 0) + t.amount_cents
     }
     return Object.entries(map).sort((a, b) => b[1] - a[1])
       .map(([cat, cents]) => `  ${cat}: $${(cents / 100).toFixed(0)}`).join('\n')
   }
 
-  const topMerchants = () => {
-    const map: Record<string, number> = {}
+  // Per-category vendor breakdown for last 3 months
+  const vendorsByCategory = () => {
+    const catMap: Record<string, Record<string, number>> = {}
     for (const t of txThreeMonths.data ?? []) {
-      map[t.merchant_name] = (map[t.merchant_name] ?? 0) + t.amount_cents
+      if (t.is_excluded) continue
+      if ((t.amount_cents ?? 0) === 0) continue
+      const cat = effectiveCategory(t.user_category, t.category)
+      if (cat === 'TRANSFER_IN' || cat === 'TRANSFER_OUT') continue
+      const vendor = t.merchant_name ?? 'Unknown'
+      if (!catMap[cat]) catMap[cat] = {}
+      catMap[cat][vendor] = (catMap[cat][vendor] ?? 0) + Math.abs(t.amount_cents)
     }
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 10)
-      .map(([m, c]) => `  ${m}: $${(c / 100).toFixed(0)}`).join('\n')
+    return Object.entries(catMap)
+      .sort(([, a], [, b]) => Object.values(b).reduce((s, v) => s + v, 0) - Object.values(a).reduce((s, v) => s + v, 0))
+      .map(([cat, vendors]) => {
+        const total = Object.values(vendors).reduce((s, v) => s + v, 0)
+        const lines = Object.entries(vendors).sort((a, b) => b[1] - a[1])
+          .map(([v, c]) => `    ${v}: $${(c / 100).toFixed(2)} (${((c / total) * 100).toFixed(0)}%)`)
+          .join('\n')
+        return `  ${cat} ($${(total / 100).toFixed(0)} total):\n${lines}`
+      }).join('\n')
   }
 
-  const thisMonthTotal = (txThisMonth.data ?? []).reduce((s, t) => s + t.amount_cents, 0)
-  const lastMonthTotal = (txLastMonth.data ?? []).reduce((s, t) => s + t.amount_cents, 0)
+  const thisMonthTotal = (txThisMonth.data ?? []).filter((t: any) => !t.is_excluded).reduce((s: number, t: any) => s + t.amount_cents, 0)
+  const lastMonthTotal = (txLastMonth.data ?? []).filter((t: any) => !t.is_excluded).reduce((s: number, t: any) => s + t.amount_cents, 0)
 
   const systemContext = `You are a personal finance assistant for Perry & Karen Sessions. Today is ${today}.
 
 ACCOUNTS:
-${(accounts.data ?? []).map(a => `  ${a.nickname ?? a.official_name ?? a.name} (${a.institution}, ${a.subtype}, ···${a.mask})`).join('\n')}
+${(accounts.data ?? []).map((a: any) => `  ${a.nickname ?? a.official_name ?? a.name} (${a.institution}, ${a.subtype}, ···${a.mask})`).join('\n')}
 
-THIS MONTH SPENDING ($${(thisMonthTotal / 100).toFixed(0)} total):
+THIS MONTH SPENDING ($${(thisMonthTotal / 100).toFixed(0)} total, by category):
 ${sumByCategory(txThisMonth.data ?? [])}
 
-LAST MONTH SPENDING ($${(lastMonthTotal / 100).toFixed(0)} total):
+LAST MONTH SPENDING ($${(lastMonthTotal / 100).toFixed(0)} total, by category):
 ${sumByCategory(txLastMonth.data ?? [])}
 
-TOP MERCHANTS (last 3 months):
-${topMerchants()}
-
-RECENT TRANSACTIONS:
-${(recentTx.data ?? []).map(t => `  ${t.date} · ${t.merchant_name} · $${(t.amount_cents / 100).toFixed(2)} · ${effectiveCategory(t.user_category, t.category)}`).join('\n')}
+LAST 3 MONTHS — ALL VENDORS BY CATEGORY (every transaction, with % of category spend):
+${vendorsByCategory()}
 
 Answer the user's question using this data. Be concise and helpful. Format dollar amounts with $ and commas. Use markdown for formatting (headers with ##, bold with **, bullet lists with -).`
 
