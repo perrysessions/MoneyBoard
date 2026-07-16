@@ -84,11 +84,18 @@ export default async function TransactionsPage({
   const totalPages = Math.ceil((count ?? 0) / pageSize)
 
   // Fetch distinct custom categories/subcategories the user has created
-  const { data: customCatRows } = await supabase
-    .from('transactions')
-    .select('user_category, user_subcategory')
-    .eq('user_id', user.id)
-    .not('user_category', 'is', null)
+  const [{ data: customCatRows }, { data: customSubRows }] = await Promise.all([
+    supabase
+      .from('transactions')
+      .select('user_category')
+      .eq('user_id', user.id)
+      .not('user_category', 'is', null),
+    supabase
+      .from('transactions')
+      .select('user_subcategory')
+      .eq('user_id', user.id)
+      .not('user_subcategory', 'is', null),
+  ])
 
   const allPlaidKeys = new Set(['INCOME','TRANSFER_IN','TRANSFER_OUT','LOAN_PAYMENTS','BANK_FEES',
     'ENTERTAINMENT','FOOD_AND_DRINK','GENERAL_MERCHANDISE','HOME_IMPROVEMENT','MEDICAL',
@@ -99,7 +106,7 @@ export default async function TransactionsPage({
   )].sort()
 
   const customSubcategories = [...new Set(
-    (customCatRows ?? []).map(r => r.user_subcategory).filter((s): s is string => !!s && s !== 'Other' && !/^[A-Z_]+$/.test(s))
+    (customSubRows ?? []).map(r => r.user_subcategory).filter((s): s is string => !!s && s !== 'Other' && !/^[A-Z_]+$/.test(s))
   )].sort()
 
   const [{ data: accounts }, { data: plaidItems }] = await Promise.all([
