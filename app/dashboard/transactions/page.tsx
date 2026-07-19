@@ -45,7 +45,7 @@ export default async function TransactionsPage({
       .select(
         `id, date, merchant_name, merchant_normalized, ${withRawName ? 'raw_name, ' : ''}amount_cents, pending,
          category, subcategory, user_category, user_subcategory, manual_override,
-         is_internal_transfer, is_excluded, has_splits, is_split, split_from_id, original_amount_cents,
+         is_internal_transfer, is_excluded, is_excluded_totals, has_splits, is_split, split_from_id, original_amount_cents,
          accounts(id, name, official_name, nickname, mask, type, subtype, institution)`,
         { count: 'exact' }
       )
@@ -152,7 +152,7 @@ export default async function TransactionsPage({
 
         <UndoBar />
 
-        <TransactionFilters accounts={accounts ?? []} showTransfers={showTransfers} showExcluded={showExcluded} />
+        <TransactionFilters accounts={accounts ?? []} showTransfers={showTransfers} showExcluded={showExcluded} customCategories={customCategories} customSubcategories={customSubcategories} />
 
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
           {!transactions?.length ? (
@@ -165,8 +165,10 @@ export default async function TransactionsPage({
                 const effectiveCat = tx.user_category ?? tx.category
                 const isInternal = tx.is_internal_transfer || effectiveCat === 'TRANSFER_IN' || effectiveCat === 'TRANSFER_OUT'
                 const isExcluded = tx.is_excluded ?? false
+                const isExcludedTotals = tx.is_excluded_totals ?? false
                 const isSplit = tx.is_split ?? false
                 const hasSplits = tx.has_splits ?? false
+                const isIncome = tx.amount_cents < 0
 
                 return (
                   <div key={tx.id} className={`px-5 py-3 ${isSplit || hasSplits ? 'bg-orange-50 border-l-2 border-orange-300' : ''} ${isInternal || isExcluded ? 'opacity-50' : ''}`}>
@@ -179,6 +181,11 @@ export default async function TransactionsPage({
                         )}
                         {isInternal && (
                           <span className="text-xs text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded-full shrink-0">Transfer</span>
+                        )}
+                        {isExcludedTotals && (
+                          <span className="text-xs text-purple-500 bg-purple-50 px-1.5 py-0.5 rounded-full shrink-0 border border-purple-100">
+                            excl. from {isIncome ? 'income' : 'expenses'}
+                          </span>
                         )}
                         {hasSplits && tx.original_amount_cents && (
                           <span className="text-xs text-orange-400 shrink-0">was {fmt(tx.original_amount_cents)}</span>
@@ -210,6 +217,7 @@ export default async function TransactionsPage({
                           txDate={tx.date}
                           customCategories={customCategories}
                           customSubcategories={customSubcategories}
+                          isInternalTransfer={isInternal}
                         />
                         {!isInternal && (
                           <details className="mt-0.5">
@@ -227,7 +235,7 @@ export default async function TransactionsPage({
                                   />
                                 )}
                                 {hasSplits && <MergeSplitsButton transactionId={tx.id} />}
-                                <ExcludeButton transactionId={tx.id} isExcluded={isExcluded} />
+                                <ExcludeButton transactionId={tx.id} isExcluded={isExcluded} isExcludedTotals={isExcludedTotals} amountCents={tx.amount_cents} />
                               </div>
                             </div>
                           </details>

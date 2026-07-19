@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { PLAID_PRIMARY_CATEGORIES, PRIMARY_LABELS, formatCategory } from '@/lib/categories'
 import { ChevronDown, X, Search } from 'lucide-react'
 import { addUndoEntry } from '@/lib/undoHistory'
@@ -36,14 +37,26 @@ export function CategoryPicker({
   const [query, setQuery] = useState('')
   const [saving, setSaving] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const buttonRef = useRef<HTMLButtonElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const [dropdownStyle, setDropdownStyle] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
 
   const isOverridden = !!value
+
+  const updatePosition = useCallback(() => {
+    if (!buttonRef.current) return
+    const rect = buttonRef.current.getBoundingClientRect()
+    setDropdownStyle({ top: rect.bottom + 4, left: rect.left })
+  }, [])
 
   // Close on outside click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
+        buttonRef.current && !buttonRef.current.contains(e.target as Node)
+      ) {
         setOpen(false)
         setQuery('')
       }
@@ -52,7 +65,18 @@ export function CategoryPicker({
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  useEffect(() => {
+    if (!open) return
+    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener('resize', updatePosition)
+    return () => {
+      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener('resize', updatePosition)
+    }
+  }, [open, updatePosition])
+
   const openDropdown = () => {
+    updatePosition()
     setOpen(true)
     setQuery('')
     setTimeout(() => inputRef.current?.focus(), 0)
@@ -174,6 +198,7 @@ export function CategoryPicker({
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={buttonRef}
         type="button"
         disabled={saving}
         onClick={openDropdown}
@@ -187,8 +212,11 @@ export function CategoryPicker({
         <ChevronDown className="h-3 w-3 shrink-0 text-gray-400" />
       </button>
 
-      {open && (
-        <div className="absolute z-50 left-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+      {open && createPortal(
+        <div
+          ref={dropdownRef}
+          style={{ position: 'fixed', top: dropdownStyle.top, left: dropdownStyle.left, zIndex: 9999 }}
+          className="w-52 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
           <div className="p-2 border-b border-gray-100 flex items-center gap-2">
             <Search className="h-3.5 w-3.5 text-gray-400 shrink-0" />
             <input
@@ -252,7 +280,8 @@ export function CategoryPicker({
               <li className="px-3 py-2 text-xs text-gray-400">No results</li>
             )}
           </ul>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

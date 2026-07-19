@@ -1,10 +1,24 @@
 'use client'
 
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
-import { Calendar } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Calendar, ChevronDown } from 'lucide-react'
 
 type Preset = 'thisMonth' | 'lastMonth' | '30d' | '3m' | 'ytd' | 'all' | 'custom'
+
+// Build list of 6 past months starting from 2 months ago
+function getPastMonths(): { label: string; from: string; to: string }[] {
+  const today = new Date()
+  const months = []
+  for (let i = 2; i <= 7; i++) {
+    const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
+    const from = d.toISOString().slice(0, 10)
+    const to = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10)
+    const label = d.toLocaleString('en-US', { month: 'long', year: 'numeric' })
+    months.push({ label, from, to })
+  }
+  return months
+}
 
 const PRESETS: { key: Preset; label: string }[] = [
   { key: 'thisMonth', label: 'This Month' },
@@ -53,9 +67,19 @@ export function DashboardDateFilter() {
   const router = useRouter()
   const pathname = usePathname()
   const sp = useSearchParams()
-  const [showCustom, setShowCustom] = useState(false)
-  const [customFrom, setCustomFrom] = useState('')
-  const [customTo, setCustomTo] = useState('')
+  const [showMonthMenu, setShowMonthMenu] = useState(false)
+  const monthMenuRef = useRef<HTMLDivElement>(null)
+  const pastMonths = getPastMonths()
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (monthMenuRef.current && !monthMenuRef.current.contains(e.target as Node)) {
+        setShowMonthMenu(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   const currentPreset = (sp.get('preset') as Preset) ?? 'thisMonth'
 
@@ -79,18 +103,17 @@ export function DashboardDateFilter() {
       params.set('to', dates.to)
     }
     router.push(`${pathname}?${params.toString()}`)
-    setShowCustom(false)
+    setShowMonthMenu(false)
   }
 
-  const applyCustom = () => {
-    if (!customFrom || !customTo) return
+  const applyMonth = (from: string, to: string, label: string) => {
     if (typeof localStorage !== 'undefined') localStorage.setItem(LS_KEY, 'custom')
     const params = new URLSearchParams()
     params.set('preset', 'custom')
-    params.set('from', customFrom)
-    params.set('to', customTo)
+    params.set('from', from)
+    params.set('to', to)
     router.push(`${pathname}?${params.toString()}`)
-    setShowCustom(false)
+    setShowMonthMenu(false)
   }
 
   return (
@@ -109,43 +132,37 @@ export function DashboardDateFilter() {
             {p.label}
           </button>
         ))}
-        <button
-          onClick={() => setShowCustom(o => !o)}
-          className={`px-3 py-1 rounded-full text-xs font-medium transition-colors flex items-center gap-1 ${
-            currentPreset === 'custom'
-              ? 'bg-blue-600 text-white'
-              : 'bg-white border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600'
-          }`}
-        >
-          <Calendar className="h-3 w-3" />
-          Custom
-        </button>
-      </div>
 
-      {showCustom && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <input
-            type="date"
-            value={customFrom}
-            onChange={e => setCustomFrom(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <span className="text-xs text-gray-400">to</span>
-          <input
-            type="date"
-            value={customTo}
-            onChange={e => setCustomTo(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+        {/* Month picker dropdown */}
+        <div ref={monthMenuRef} className="relative">
           <button
-            onClick={applyCustom}
-            disabled={!customFrom || !customTo}
-            className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg disabled:opacity-40 hover:bg-blue-700 transition-colors"
+            onClick={() => setShowMonthMenu(o => !o)}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors flex items-center gap-1 ${
+              currentPreset === 'custom'
+                ? 'bg-blue-600 text-white'
+                : 'bg-white border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600'
+            }`}
           >
-            Apply
+            <Calendar className="h-3 w-3" />
+            Month
+            <ChevronDown className="h-3 w-3" />
           </button>
+
+          {showMonthMenu && (
+            <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-50">
+              {pastMonths.map(m => (
+                <button
+                  key={m.from}
+                  onClick={() => applyMonth(m.from, m.to, m.label)}
+                  className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }

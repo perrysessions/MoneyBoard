@@ -64,6 +64,7 @@ export async function PATCH(req: Request) {
   }))
 
   // Build the update payload
+  const TRANSFER_CATS = new Set(['TRANSFER_IN', 'TRANSFER_OUT'])
   let updatePayload: Record<string, any>
   if (field === 'subcategory') {
     updatePayload = {
@@ -71,10 +72,13 @@ export async function PATCH(req: Request) {
     }
   } else {
     const isCustomCategory = value !== null && !PLAID_PRIMARY_CATEGORIES.includes(value)
+    const isTransferCat = value !== null && TRANSFER_CATS.has(value)
     updatePayload = {
       user_category: value ?? null,
       manual_override: !!value,
       user_subcategory: isCustomCategory ? 'Other' : null,
+      // Clear transfer flag when user explicitly picks a non-transfer category
+      ...(value !== null && !isTransferCat ? { is_internal_transfer: false } : {}),
     }
   }
 

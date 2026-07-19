@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, X, LayoutDashboard, List, BarChart2, Bell, MessageCircle } from 'lucide-react'
+import { Menu, X, LayoutDashboard, List, BarChart2, Bell, MessageCircle, Upload } from 'lucide-react'
 
 const links = [
   { href: '/dashboard', label: 'Overview', icon: LayoutDashboard },
@@ -11,6 +11,7 @@ const links = [
   { href: '/dashboard/charts', label: 'Charts', icon: BarChart2 },
   { href: '/dashboard/limits', label: 'Limits', icon: Bell },
   { href: '/dashboard/chat', label: 'Ask AI', icon: MessageCircle },
+  { href: '/dashboard/import', label: 'Import CSV', icon: Upload },
 ]
 
 export function HamburgerMenu() {

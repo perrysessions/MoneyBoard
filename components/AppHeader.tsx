@@ -1,3 +1,4 @@
+import Link from 'next/link'
 import { HamburgerMenu } from '@/components/HamburgerMenu'
 import { ProfileMenu } from '@/components/ProfileMenu'
 
@@ -8,7 +9,7 @@ export function AppHeader({ email }: { email: string }) {
         <HamburgerMenu />
       </div>
       <div className="flex items-center justify-center">
-        <span className="font-semibold text-gray-900 text-sm">Money Board</span>
+        <Link href="/dashboard" className="font-semibold text-gray-900 text-sm hover:text-blue-600 transition-colors">Money Board</Link>
       </div>
       <div className="flex items-center justify-end">
         <ProfileMenu email={email} />

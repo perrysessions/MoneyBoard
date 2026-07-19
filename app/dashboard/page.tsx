@@ -69,7 +69,7 @@ export default async function DashboardPage({
       .eq('pending', false)
       .eq('is_internal_transfer', false)
       .gt('amount_cents', 0)
-    if (excludeCol) q = q.eq('is_excluded', false)
+    if (excludeCol) { q = q.eq('is_excluded', false); q = q.eq('is_excluded_totals', false) }
     q = q.or('and(user_category.is.null,category.is.null),and(user_category.is.null,category.not.in.(TRANSFER_IN,TRANSFER_OUT)),and(user_category.not.is.null,user_category.not.in.(TRANSFER_IN,TRANSFER_OUT))')
     if (from) q = q.gte('date', from)
     if (to) q = q.lte('date', to)
@@ -84,7 +84,7 @@ export default async function DashboardPage({
       .eq('pending', false)
       .eq('is_internal_transfer', false)
       .lt('amount_cents', 0)
-    if (excludeCol) q = q.eq('is_excluded', false)
+    if (excludeCol) { q = q.eq('is_excluded', false); q = q.eq('is_excluded_totals', false) }
     q = q.or('and(user_category.is.null,category.is.null),and(user_category.is.null,category.not.in.(TRANSFER_IN,TRANSFER_OUT)),and(user_category.not.is.null,user_category.not.in.(TRANSFER_IN,TRANSFER_OUT))')
     if (from) q = q.gte('date', from)
     if (to) q = q.lte('date', to)

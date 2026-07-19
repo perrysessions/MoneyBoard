@@ -6,11 +6,15 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { is_excluded } = await req.json()
+  const body = await req.json()
+  const update: Record<string, boolean> = {}
+  if ('is_excluded' in body) update.is_excluded = body.is_excluded
+  if ('is_excluded_totals' in body) update.is_excluded_totals = body.is_excluded_totals
+  if (!Object.keys(update).length) return NextResponse.json({ error: 'nothing to update' }, { status: 400 })
 
   const { error } = await supabase
     .from('transactions')
-    .update({ is_excluded })
+    .update(update)
     .eq('id', params.id)
     .eq('user_id', user.id)
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { User, Building2, KeyRound, LogOut } from 'lucide-react'
+import { Building2, KeyRound, LogOut, Tag } from 'lucide-react'
 import { logout } from '@/app/auth/actions'
 
 export function ProfileMenu({ email }: { email: string }) {
@@ -45,6 +45,13 @@ export function ProfileMenu({ email }: { email: string }) {
             >
               <Building2 className="h-4 w-4 text-gray-400" />
               Connected Banks
+            </button>
+            <button
+              onClick={() => { setOpen(false); router.push('/dashboard/categories') }}
+              className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              <Tag className="h-4 w-4 text-gray-400" />
+              Manage Categories
             </button>
             <button
               onClick={() => { setOpen(false); router.push('/dashboard/change-password') }}

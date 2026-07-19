@@ -7,7 +7,15 @@ import { PLAID_PRIMARY_CATEGORIES, PRIMARY_LABELS, SUBCATEGORY_LABELS, getSubcat
 
 type Account = { id: string; name: string; official_name: string | null; nickname: string | null; mask: string | null }
 
-export function TransactionFilters({ accounts, showTransfers, showExcluded }: { accounts: Account[]; showTransfers?: boolean; showExcluded?: boolean }) {
+export function TransactionFilters({
+  accounts, showTransfers, showExcluded, customCategories = [], customSubcategories = [],
+}: {
+  accounts: Account[]
+  showTransfers?: boolean
+  showExcluded?: boolean
+  customCategories?: string[]
+  customSubcategories?: string[]
+}) {
   const router = useRouter()
   const pathname = usePathname()
   const sp = useSearchParams()
@@ -129,6 +137,13 @@ export function TransactionFilters({ accounts, showTransfers, showExcluded }: { 
               {PLAID_PRIMARY_CATEGORIES.map(key => (
                 <option key={key} value={key}>{PRIMARY_LABELS[key]}</option>
               ))}
+              {customCategories.length > 0 && (
+                <optgroup label="Custom">
+                  {customCategories.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
 
@@ -146,6 +161,13 @@ export function TransactionFilters({ accounts, showTransfers, showExcluded }: { 
               {subcategoryKeys.map(key => (
                 <option key={key} value={key}>{SUBCATEGORY_LABELS[key] ?? key}</option>
               ))}
+              {!selectedPrimary && customSubcategories.length > 0 && (
+                <optgroup label="Custom">
+                  {customSubcategories.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
 

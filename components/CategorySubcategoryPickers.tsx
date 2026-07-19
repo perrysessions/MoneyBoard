@@ -1,8 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { CategoryPicker } from './CategoryPicker'
 import { SubcategoryPicker } from './SubcategoryPicker'
+
+const TRANSFER_CATS = new Set(['TRANSFER_IN', 'TRANSFER_OUT'])
 
 interface Props {
   transactionId: string
@@ -15,13 +18,15 @@ interface Props {
   txDate: string
   customCategories: string[]
   customSubcategories: string[]
+  isInternalTransfer?: boolean
 }
 
 export function CategorySubcategoryPickers({
   transactionId, userCategory, plaidCategory, plaidSubcategory,
   userSubcategory, merchantName, merchantNormalized, txDate,
-  customCategories, customSubcategories,
+  customCategories, customSubcategories, isInternalTransfer = false,
 }: Props) {
+  const router = useRouter()
   // Tracks the effective primary key so SubcategoryPicker updates instantly when category changes
   const [effectivePrimaryKey, setEffectivePrimaryKey] = useState<string | null>(
     userCategory ?? plaidCategory
@@ -43,11 +48,14 @@ export function CategorySubcategoryPickers({
           customCategories={customCategories}
           onCategoryChange={(newCategory) => {
             setEffectivePrimaryKey(newCategory ?? plaidCategory)
-            // When a custom category is set, auto-subcategory becomes "Other"
             if (newCategory && !isPLaidCategory(newCategory)) {
               setCurrentSubcategory('Other')
             } else {
               setCurrentSubcategory(null)
+            }
+            // If this was a transfer row and the new cat is non-transfer, refresh so opacity clears
+            if (isInternalTransfer && newCategory && !TRANSFER_CATS.has(newCategory)) {
+              router.refresh()
             }
           }}
         />
