@@ -6,16 +6,17 @@ import { Calendar, ChevronDown } from 'lucide-react'
 
 type Preset = 'thisMonth' | 'lastMonth' | '30d' | '3m' | 'ytd' | 'all' | 'custom'
 
-// Build list of 6 past months starting from 2 months ago
-function getPastMonths(): { label: string; from: string; to: string }[] {
-  const today = new Date()
+function getAllMonths(earliestDate: string | null): { label: string; from: string; to: string }[] {
   const months = []
-  for (let i = 2; i <= 7; i++) {
-    const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
-    const from = d.toISOString().slice(0, 10)
-    const to = new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10)
-    const label = d.toLocaleString('en-US', { month: 'long', year: 'numeric' })
+  const today = new Date()
+  const earliest = earliestDate ? new Date(earliestDate.slice(0, 7) + '-02') : new Date(today.getFullYear(), today.getMonth() - 12, 1)
+  const cur = new Date(today.getFullYear(), today.getMonth(), 1)
+  while (cur >= earliest) {
+    const from = cur.toISOString().slice(0, 10)
+    const to = new Date(cur.getFullYear(), cur.getMonth() + 1, 0).toISOString().slice(0, 10)
+    const label = cur.toLocaleString('en-US', { month: 'long', year: 'numeric' })
     months.push({ label, from, to })
+    cur.setMonth(cur.getMonth() - 1)
   }
   return months
 }
@@ -63,7 +64,7 @@ function presetDates(preset: Preset): { from: string; to: string } | null {
   return null
 }
 
-export function DashboardDateFilter() {
+export function DashboardDateFilter({ earliestDate }: { earliestDate?: string | null }) {
   const router = useRouter()
   const pathname = usePathname()
   const sp = useSearchParams()
@@ -73,7 +74,7 @@ export function DashboardDateFilter() {
   const [customTo, setCustomTo] = useState('')
   const monthMenuRef = useRef<HTMLDivElement>(null)
   const customRef = useRef<HTMLDivElement>(null)
-  const pastMonths = getPastMonths()
+  const allMonths = getAllMonths(earliestDate ?? null)
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -168,15 +169,17 @@ export function DashboardDateFilter() {
 
           {showMonthMenu && (
             <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-50">
-              {pastMonths.map(m => (
-                <button
-                  key={m.from}
-                  onClick={() => applyMonth(m.from, m.to, m.label)}
-                  className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-                >
-                  {m.label}
-                </button>
-              ))}
+              <div className="max-h-48 overflow-y-auto">
+                {allMonths.map(m => (
+                  <button
+                    key={m.from}
+                    onClick={() => applyMonth(m.from, m.to, m.label)}
+                    className="w-full text-left px-3 py-2 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>

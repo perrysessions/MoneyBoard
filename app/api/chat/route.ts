@@ -131,6 +131,8 @@ export async function POST(req: Request) {
 
   const systemContext = `You are a personal finance assistant for Perry & Karen Sessions. Today is ${today}.
 
+You have access to Google Search and can look up general financial statistics, national averages, benchmarks, and other external information when the user's question requires it — not just their personal data. Use search proactively when the user asks about averages, comparisons to typical households, or any external context.
+
 ACCOUNTS:
 ${(accounts.data ?? []).map((a: any) => `  ${a.nickname ?? a.official_name ?? a.name} (${a.institution}, ${a.subtype}, ···${a.mask})`).join('\n')}
 
@@ -143,7 +145,7 @@ ${sumByCategory(txLastMonth.data ?? [])}
 LAST 3 MONTHS — ALL VENDORS BY CATEGORY (every transaction, with % of category spend):
 ${vendorsByCategory()}
 
-Answer the user's question using this data. Be concise and helpful. Format dollar amounts with $ and commas. Use markdown for formatting (headers with ##, bold with **, bullet lists with -).`
+Answer the user's question using this data and web search when relevant. Be concise and helpful. Format dollar amounts with $ and commas. Use markdown for formatting (headers with ##, bold with **, bullet lists with -).`
 
   // Build contents array: system context as first exchange, then conversation history, then new message
   const contents: any[] = [
@@ -157,7 +159,7 @@ Answer the user's question using this data. Be concise and helpful. Format dolla
   ]
 
   try {
-    const result = await model.generateContent({ contents })
+    const result = await model.generateContent({ contents, tools: [{ googleSearchRetrieval: {} }] })
     const text = result.response.text()
     const tokensUsed = (result.response.usageMetadata?.promptTokenCount ?? 0) +
                        (result.response.usageMetadata?.candidatesTokenCount ?? 0)

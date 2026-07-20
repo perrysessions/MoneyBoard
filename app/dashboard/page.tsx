@@ -116,10 +116,11 @@ export default async function DashboardPage({
   }
 
   // Try with is_excluded filter; fall back gracefully if column doesn't exist yet
-  let [spendResult, incomeResult, countResult] = await Promise.all([
+  let [spendResult, incomeResult, countResult, earliestTxResult] = await Promise.all([
     buildSpendQuery(true),
     buildIncomeQuery(true),
     supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+    supabase.from('transactions').select('date').eq('user_id', user.id).order('date', { ascending: true }).limit(1).maybeSingle(),
   ])
 
   if (spendResult.error || incomeResult.error) {
@@ -135,6 +136,7 @@ export default async function DashboardPage({
   const txData = spendResult.data
   const incomeData = incomeResult.data
   const txCount = countResult.count
+  const earliestDate = (earliestTxResult.data as any)?.date as string | null | undefined
   const chartTxs = (chartResult.data ?? []) as { date: string; amount_cents: number }[]
 
   const allTx = txData ?? []
@@ -157,7 +159,7 @@ export default async function DashboardPage({
         <h1 className="text-xl font-semibold text-gray-900 mb-4">{label}</h1>
 
         <Suspense fallback={null}>
-          <DashboardDateFilter />
+          <DashboardDateFilter earliestDate={earliestDate} />
         </Suspense>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">

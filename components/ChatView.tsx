@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Send, Loader2, Plus, Trash2, MessageSquare, ChevronDown, ChevronUp } from 'lucide-react'
 
 interface Message {
@@ -76,6 +76,7 @@ export function ChatView() {
   const [showSessions, setShowSessions] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Load usage + sessions on mount
   useEffect(() => {
@@ -88,6 +89,14 @@ export function ChatView() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, loading])
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+  }, [input])
 
   const loadSessions = async () => {
     const res = await fetch('/api/chat/sessions')
@@ -167,9 +176,9 @@ export function ChatView() {
   const meterColor = pct >= 90 ? 'bg-red-500' : pct >= 70 ? 'bg-amber-400' : 'bg-blue-500'
 
   return (
-    <div className="flex gap-4 h-full min-h-[600px]">
+    <div className="flex gap-0 sm:gap-6 h-full" style={{ minHeight: 'calc(100vh - 180px)' }}>
       {/* Sessions sidebar — desktop */}
-      <div className="hidden sm:flex flex-col w-52 shrink-0">
+      <div className="hidden sm:flex flex-col w-56 shrink-0 border-r border-gray-100 pr-4">
         <button
           onClick={newChat}
           className="flex items-center gap-2 w-full px-3 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors mb-3"
@@ -323,15 +332,22 @@ export function ChatView() {
         </div>
 
         {/* Input */}
-        <div className="flex gap-2">
-          <input
-            type="text"
+        <div className="flex gap-2 items-end">
+          <textarea
+            ref={textareaRef}
             value={input}
             onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input) } }}
-            placeholder="Ask about your finances…"
+            onKeyDown={e => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault()
+                send(input)
+              }
+            }}
+            placeholder="Ask about your finances… (Ctrl+Enter to send)"
+            rows={1}
             disabled={loading || pct >= 100}
-            className="flex-1 px-4 py-3 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+            className="flex-1 px-4 py-3 text-sm border border-gray-200 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 resize-none overflow-hidden"
+            style={{ minHeight: '48px', maxHeight: '160px' }}
           />
           <button
             onClick={() => send(input)}

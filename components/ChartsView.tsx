@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import Link from 'next/link'
-import { List } from 'lucide-react'
+import { List, Calendar } from 'lucide-react'
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -37,12 +37,120 @@ const PRESETS = [
   { label: 'All',  days: 9999 },
 ]
 
-function filterByDays(txs: Tx[], days: number) {
-  if (days >= 9999) return txs
-  const cutoff = new Date()
-  cutoff.setDate(cutoff.getDate() - days)
-  const cutoffStr = cutoff.toISOString().slice(0, 10)
-  return txs.filter(t => t.date >= cutoffStr)
+type DateRange =
+  | { mode: 'preset'; i: number }
+  | { mode: 'month'; m: string }
+  | { mode: 'custom'; from: string; to: string }
+
+const DEFAULT_PIE_RANGE: DateRange = { mode: 'preset', i: 1 }
+const DEFAULT_LINE_RANGE: DateRange = { mode: 'preset', i: 5 }
+const DEFAULT_TABLE_RANGE: DateRange = { mode: 'preset', i: 1 }
+
+function filterByRange(txs: Tx[], range: DateRange): Tx[] {
+  if (range.mode === 'preset') {
+    const days = PRESETS[range.i].days
+    if (days >= 9999) return txs
+    const cutoff = new Date()
+    cutoff.setDate(cutoff.getDate() - days)
+    return txs.filter(t => t.date >= cutoff.toISOString().slice(0, 10))
+  }
+  if (range.mode === 'month') return txs.filter(t => t.date.startsWith(range.m))
+  return txs.filter(t => (!range.from || t.date >= range.from) && (!range.to || t.date <= range.to))
+}
+
+function rangeDateParams(range: DateRange): string {
+  if (range.mode === 'preset') {
+    const days = PRESETS[range.i].days
+    if (days >= 9999) return ''
+    return `&dateFrom=${new Date(Date.now() - days * 864e5).toISOString().slice(0, 10)}&dateTo=${new Date().toISOString().slice(0, 10)}`
+  }
+  if (range.mode === 'month') {
+    const [y, m] = range.m.split('-').map(Number)
+    return `&dateFrom=${range.m}-01&dateTo=${new Date(y, m, 0).toISOString().slice(0, 10)}`
+  }
+  return `&dateFrom=${range.from}&dateTo=${range.to}`
+}
+
+function DateRangeBar({ value, onChange, months }: { value: DateRange; onChange: (r: DateRange) => void; months: string[] }) {
+  const [showMonth, setShowMonth] = useState(false)
+  const [showCustom, setShowCustom] = useState(false)
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+  const monthRef = useRef<HTMLDivElement>(null)
+  const customRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (monthRef.current && !monthRef.current.contains(e.target as Node)) setShowMonth(false)
+      if (customRef.current && !customRef.current.contains(e.target as Node)) setShowCustom(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const isPreset = (i: number) => value.mode === 'preset' && value.i === i
+  const isMonth = value.mode === 'month'
+  const isCustom = value.mode === 'custom'
+
+  const monthLabel = isMonth ? new Date((value as { mode: 'month'; m: string }).m + '-02').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'Month'
+
+  return (
+    <div className="flex gap-1 flex-wrap items-center">
+      {PRESETS.map((p, i) => (
+        <button key={p.label} onClick={() => { onChange({ mode: 'preset', i }); setShowMonth(false); setShowCustom(false) }}
+          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${isPreset(i) ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+          {p.label}
+        </button>
+      ))}
+      <div ref={monthRef} className="relative">
+        <button onClick={() => { setShowMonth(o => !o); setShowCustom(false) }}
+          className={`px-2.5 py-1 rounded-lg text-xs font-medium flex items-center gap-1 transition-colors ${isMonth || showMonth ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+          <Calendar className="h-3 w-3" />
+          {monthLabel}
+        </button>
+        {showMonth && (
+          <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
+            <div className="max-h-48 overflow-y-auto">
+              {months.map(m => {
+                const active = isMonth && (value as { mode: 'month'; m: string }).m === m
+                return (
+                  <button key={m} onClick={() => { onChange({ mode: 'month', m }); setShowMonth(false) }}
+                    className={`w-full text-left px-3 py-2 text-xs transition-colors hover:bg-blue-50 hover:text-blue-700 ${active ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'}`}>
+                    {new Date(m + '-02').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+      <div ref={customRef} className="relative">
+        <button onClick={() => { setShowCustom(o => !o); setShowMonth(false) }}
+          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${isCustom || showCustom ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+          Custom
+        </button>
+        {showCustom && (
+          <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-50 space-y-2">
+            <div>
+              <label className="text-xs text-gray-500 block mb-0.5">From</label>
+              <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-0.5">To</label>
+              <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400" />
+            </div>
+            <button onClick={() => { if (customFrom && customTo) { onChange({ mode: 'custom', from: customFrom, to: customTo }); setShowCustom(false) } }}
+              disabled={!customFrom || !customTo}
+              className="w-full py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40">
+              Apply
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 function getKey(t: Tx, sub: boolean) {
@@ -87,24 +195,6 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   )
 }
 
-function PresetBar({ value, onChange }: { value: number; onChange: (i: number) => void }) {
-  return (
-    <div className="flex gap-1">
-      {PRESETS.map((p, i) => (
-        <button
-          key={p.label}
-          onClick={() => onChange(i)}
-          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
-            value === i ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-          }`}
-        >
-          {p.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 function SubToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="flex items-center rounded-lg border border-gray-200 overflow-hidden text-xs font-medium">
@@ -132,10 +222,9 @@ function lsSet(key: string, value: unknown) {
 }
 
 export function ChartsView({ transactions, earliest, latest }: { transactions: Tx[], earliest: string | null, latest: string | null }) {
-  // Use safe server-side defaults; restore from localStorage after hydration to avoid mismatch
-  const [piePreset, setPiePreset] = useState(1)
-  const [linePreset, setLinePreset] = useState(5)
-  const [tablePreset, setTablePreset] = useState(1)
+  const [pieRange, setPieRange] = useState<DateRange>(DEFAULT_PIE_RANGE)
+  const [lineRange, setLineRange] = useState<DateRange>(DEFAULT_LINE_RANGE)
+  const [tableRange, setTableRange] = useState<DateRange>(DEFAULT_TABLE_RANGE)
   const [lineCategory, setLineCategory] = useState('__all__')
   const [useSubcategory, setUseSubcategory] = useState(false)
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set())
@@ -143,15 +232,28 @@ export function ChartsView({ transactions, earliest, latest }: { transactions: T
 
   useEffect(() => {
     const sub = ls('charts-use-subcategory', false)
-    setPiePreset(ls('charts-pie-preset', 1))
-    setLinePreset(ls('charts-line-preset', 5))
-    setTablePreset(ls('charts-table-preset', 1))
+    setPieRange(ls('charts-pie-range', DEFAULT_PIE_RANGE))
+    setLineRange(ls('charts-line-range', DEFAULT_LINE_RANGE))
+    setTableRange(ls('charts-table-range', DEFAULT_TABLE_RANGE))
     setLineCategory(ls('charts-line-category', '__all__'))
     setUseSubcategory(sub)
     setHiddenCategories(new Set(ls<string[]>(sub ? 'charts-hidden-sub' : 'charts-hidden-primary', [])))
   }, [])
 
-  const handleTablePreset = (i: number) => { setTablePreset(i); lsSet('charts-table-preset', i) }
+  const months = useMemo(() => {
+    if (!earliest) return []
+    const start = new Date(earliest.slice(0, 7) + '-02')
+    const result: string[] = []
+    const cur = new Date()
+    cur.setDate(1)
+    while (cur >= start) {
+      result.push(cur.toISOString().slice(0, 7))
+      cur.setMonth(cur.getMonth() - 1)
+    }
+    return result
+  }, [earliest])
+
+  const handleTableRange = (r: DateRange) => { setTableRange(r); lsSet('charts-table-range', r) }
 
   const toggleExpand = (cat: string) => {
     setExpandedCats(prev => {
@@ -161,21 +263,19 @@ export function ChartsView({ transactions, earliest, latest }: { transactions: T
     })
   }
 
-  const handlePiePreset = (i: number) => { setPiePreset(i); lsSet('charts-pie-preset', i) }
-  const handleLinePreset = (i: number) => { setLinePreset(i); lsSet('charts-line-preset', i) }
+  const handlePieRange = (r: DateRange) => { setPieRange(r); lsSet('charts-pie-range', r) }
+  const handleLineRange = (r: DateRange) => { setLineRange(r); lsSet('charts-line-range', r) }
   const handleLineCategory = (v: string) => { setLineCategory(v); lsSet('charts-line-category', v) }
 
   const handleSubToggle = (v: boolean) => {
-    // Save current hidden set before switching modes
     lsSet(useSubcategory ? 'charts-hidden-sub' : 'charts-hidden-primary', [...hiddenCategories])
-    // Restore the other mode's hidden set
     const restored = new Set(ls<string[]>(v ? 'charts-hidden-sub' : 'charts-hidden-primary', []))
     setHiddenCategories(restored)
     setUseSubcategory(v)
     lsSet('charts-use-subcategory', v)
   }
 
-  const pieTxs = useMemo(() => filterByDays(transactions, PRESETS[piePreset].days), [transactions, piePreset])
+  const pieTxs = useMemo(() => filterByRange(transactions, pieRange), [transactions, pieRange])
 
   const { allCategories, displayToKey } = useMemo(() => {
     const map: Record<string, number> = {}
@@ -199,10 +299,10 @@ export function ChartsView({ transactions, earliest, latest }: { transactions: T
   const pieData = useMemo(() => groupByCategory(pieTxs, hiddenCategories, useSubcategory), [pieTxs, hiddenCategories, useSubcategory])
   const pieTotal = useMemo(() => pieData.reduce((s, d) => s + d.value, 0), [pieData])
 
-  const lineTxs = useMemo(() => filterByDays(transactions, PRESETS[linePreset].days), [transactions, linePreset])
+  const lineTxs = useMemo(() => filterByRange(transactions, lineRange), [transactions, lineRange])
   const lineData = useMemo(() => groupByMonth(lineTxs, lineCategory, useSubcategory), [lineTxs, lineCategory, useSubcategory])
 
-  const tableTxs = useMemo(() => filterByDays(transactions, PRESETS[tablePreset].days), [transactions, tablePreset])
+  const tableTxs = useMemo(() => filterByRange(transactions, tableRange), [transactions, tableRange])
 
   // Build category → vendor → {total, count} map
   const tableData = useMemo(() => {
@@ -259,7 +359,7 @@ export function ChartsView({ transactions, earliest, latest }: { transactions: T
           <h2 className="text-sm font-semibold text-gray-900">
             Spending by {useSubcategory ? 'Subcategory' : 'Category'}
           </h2>
-          <PresetBar value={piePreset} onChange={handlePiePreset} />
+          <DateRangeBar value={pieRange} onChange={handlePieRange} months={months} />
         </div>
 
         {!hasData ? (
@@ -297,10 +397,7 @@ export function ChartsView({ transactions, earliest, latest }: { transactions: T
                 const pct = entry && pieTotal > 0 ? Math.round((entry.value / pieTotal) * 100) : 0
                 const color = COLORS[colorIndex[cat] % COLORS.length]
                 const rawKey = displayToKey[cat] ?? ''
-                const pieDays = PRESETS[piePreset].days
-                const dateParams = pieDays < 9999
-                  ? `&dateFrom=${new Date(Date.now() - pieDays * 864e5).toISOString().slice(0, 10)}&dateTo=${new Date().toISOString().slice(0, 10)}`
-                  : ''
+                const dateParams = rangeDateParams(pieRange)
                 const txUrl = `/dashboard/transactions?${useSubcategory ? 'subcategory' : 'category'}=${encodeURIComponent(rawKey)}${dateParams}`
                 return (
                   <div key={cat} className={`flex items-center gap-1 rounded-lg ${isHidden ? 'opacity-35' : ''}`}>
@@ -351,7 +448,7 @@ export function ChartsView({ transactions, earliest, latest }: { transactions: T
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
-            <PresetBar value={linePreset} onChange={handleLinePreset} />
+            <DateRangeBar value={lineRange} onChange={handleLineRange} months={months} />
           </div>
         </div>
 
@@ -376,7 +473,7 @@ export function ChartsView({ transactions, earliest, latest }: { transactions: T
           <h2 className="text-sm font-semibold text-gray-900">
             Vendor Breakdown by {useSubcategory ? 'Subcategory' : 'Category'}
           </h2>
-          <PresetBar value={tablePreset} onChange={handleTablePreset} />
+          <DateRangeBar value={tableRange} onChange={handleTableRange} months={months} />
         </div>
 
         {tableData.length === 0 ? (
