@@ -159,7 +159,7 @@ Answer the user's question using this data and web search when relevant. Be conc
   ]
 
   try {
-    const result = await model.generateContent({ contents, tools: [{ googleSearchRetrieval: {} }] })
+    const result = await model.generateContent({ contents, tools: [{ googleSearch: {} } as any] })
     const text = result.response.text()
     const tokensUsed = (result.response.usageMetadata?.promptTokenCount ?? 0) +
                        (result.response.usageMetadata?.candidatesTokenCount ?? 0)
