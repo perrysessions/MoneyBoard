@@ -77,17 +77,13 @@ export async function POST(req: Request) {
   const lastMonthStart = new Date(thisMonthStart)
   lastMonthStart.setMonth(lastMonthStart.getMonth() - 1)
   const lastMonthStr = lastMonthStart.toISOString().slice(0, 10)
-  const threeMonthsAgo = new Date()
-  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 18)
-  const threeMonthsStr = threeMonthsAgo.toISOString().slice(0, 10)
-
-  const [txThisMonth, txLastMonth, txThreeMonths, accounts] = await Promise.all([
+  const [txThisMonth, txLastMonth, txAllHistory, accounts] = await Promise.all([
     supabase.from('transactions').select('amount_cents, category, user_category, merchant_name, date, is_excluded')
       .eq('user_id', user.id).eq('pending', false).eq('is_internal_transfer', false).gt('amount_cents', 0).gte('date', thisMonthStr),
     supabase.from('transactions').select('amount_cents, category, user_category, merchant_name, date, is_excluded')
       .eq('user_id', user.id).eq('pending', false).eq('is_internal_transfer', false).gt('amount_cents', 0).gte('date', lastMonthStr).lt('date', thisMonthStr),
     supabase.from('transactions').select('amount_cents, category, user_category, user_subcategory, subcategory, merchant_name, date, is_excluded')
-      .eq('user_id', user.id).eq('pending', false).eq('is_internal_transfer', false).gte('date', threeMonthsStr),
+      .eq('user_id', user.id).eq('pending', false).eq('is_internal_transfer', false).order('date', { ascending: false }),
     supabase.from('accounts').select('name, official_name, nickname, mask, type, subtype, institution').eq('user_id', user.id),
   ])
 
@@ -106,7 +102,7 @@ export async function POST(req: Request) {
   // Per-category vendor breakdown for last 3 months
   const vendorsByCategory = () => {
     const catMap: Record<string, Record<string, number>> = {}
-    for (const t of txThreeMonths.data ?? []) {
+    for (const t of txAllHistory.data ?? []) {
       if (t.is_excluded) continue
       if ((t.amount_cents ?? 0) === 0) continue
       const cat = effectiveCategory(t.user_category, t.category)
@@ -142,7 +138,7 @@ ${sumByCategory(txThisMonth.data ?? [])}
 LAST MONTH SPENDING ($${(lastMonthTotal / 100).toFixed(0)} total, by category):
 ${sumByCategory(txLastMonth.data ?? [])}
 
-LAST 18 MONTHS — ALL VENDORS BY CATEGORY (every transaction, with % of category spend):
+ALL TRANSACTION HISTORY — ALL VENDORS BY CATEGORY (every transaction ever uploaded, with % of category spend):
 ${vendorsByCategory()}
 
 Answer the user's question using this data and web search when relevant. Be concise and helpful. Format dollar amounts with $ and commas. Use markdown for formatting (headers with ##, bold with **, bullet lists with -).`
