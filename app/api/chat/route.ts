@@ -77,13 +77,32 @@ export async function POST(req: Request) {
   const lastMonthStart = new Date(thisMonthStart)
   lastMonthStart.setMonth(lastMonthStart.getMonth() - 1)
   const lastMonthStr = lastMonthStart.toISOString().slice(0, 10)
+  // Paginate all-history query to bypass Supabase's 1000-row default cap
+  const fetchAllHistory = async () => {
+    const PAGE = 1000
+    const rows: any[] = []
+    let offset = 0
+    while (true) {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('amount_cents, category, user_category, user_subcategory, subcategory, merchant_name, date, is_excluded')
+        .eq('user_id', user.id).eq('pending', false).eq('is_internal_transfer', false)
+        .order('date', { ascending: false })
+        .range(offset, offset + PAGE - 1)
+      if (error) return { data: null, error }
+      rows.push(...(data ?? []))
+      if ((data?.length ?? 0) < PAGE) break
+      offset += PAGE
+    }
+    return { data: rows, error: null }
+  }
+
   const [txThisMonth, txLastMonth, txAllHistory, accounts] = await Promise.all([
     supabase.from('transactions').select('amount_cents, category, user_category, merchant_name, date, is_excluded')
       .eq('user_id', user.id).eq('pending', false).eq('is_internal_transfer', false).gt('amount_cents', 0).gte('date', thisMonthStr),
     supabase.from('transactions').select('amount_cents, category, user_category, merchant_name, date, is_excluded')
       .eq('user_id', user.id).eq('pending', false).eq('is_internal_transfer', false).gt('amount_cents', 0).gte('date', lastMonthStr).lt('date', thisMonthStr),
-    supabase.from('transactions').select('amount_cents, category, user_category, user_subcategory, subcategory, merchant_name, date, is_excluded')
-      .eq('user_id', user.id).eq('pending', false).eq('is_internal_transfer', false).order('date', { ascending: false }),
+    fetchAllHistory(),
     supabase.from('accounts').select('name, official_name, nickname, mask, type, subtype, institution').eq('user_id', user.id),
   ])
 
