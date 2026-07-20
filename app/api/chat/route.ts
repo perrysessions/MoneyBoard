@@ -78,7 +78,7 @@ export async function POST(req: Request) {
   lastMonthStart.setMonth(lastMonthStart.getMonth() - 1)
   const lastMonthStr = lastMonthStart.toISOString().slice(0, 10)
   const threeMonthsAgo = new Date()
-  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3)
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 18)
   const threeMonthsStr = threeMonthsAgo.toISOString().slice(0, 10)
 
   const [txThisMonth, txLastMonth, txThreeMonths, accounts] = await Promise.all([
@@ -142,7 +142,7 @@ ${sumByCategory(txThisMonth.data ?? [])}
 LAST MONTH SPENDING ($${(lastMonthTotal / 100).toFixed(0)} total, by category):
 ${sumByCategory(txLastMonth.data ?? [])}
 
-LAST 3 MONTHS — ALL VENDORS BY CATEGORY (every transaction, with % of category spend):
+LAST 18 MONTHS — ALL VENDORS BY CATEGORY (every transaction, with % of category spend):
 ${vendorsByCategory()}
 
 Answer the user's question using this data and web search when relevant. Be concise and helpful. Format dollar amounts with $ and commas. Use markdown for formatting (headers with ##, bold with **, bullet lists with -).`
