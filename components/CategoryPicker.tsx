@@ -33,6 +33,7 @@ export function CategoryPicker({
   const [value, setValue] = useState<string | null>(userCategory)
   const [pending, setPending] = useState<string | null | undefined>(undefined)
   const [pattern, setPattern] = useState('')
+  const [pattern2, setPattern2] = useState('')
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [saving, setSaving] = useState(false)
@@ -105,6 +106,7 @@ export function CategoryPicker({
     setQuery('')
     if (newVal === value) return
     setPattern(suggestPattern(merchantNormalized))
+    setPattern2('')
     setPending(newVal)
   }
 
@@ -122,6 +124,7 @@ export function CategoryPicker({
         scope,
         merchant_normalized: merchantNormalized,
         pattern: scope !== 'single' ? pattern : undefined,
+        pattern2: scope !== 'single' && pattern2.trim() ? pattern2.trim() : undefined,
         date: txDate,
       }),
     })
@@ -167,12 +170,22 @@ export function CategoryPicker({
           </button>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-400 shrink-0">Vendor pattern:</span>
+          <span className="text-xs text-gray-400 shrink-0">Contains:</span>
           <input
             type="text"
             value={pattern}
             onChange={e => setPattern(e.target.value)}
             className="flex-1 text-xs border border-gray-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-300 min-w-0"
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-400 shrink-0">And also:</span>
+          <input
+            type="text"
+            placeholder="optional second phrase"
+            value={pattern2}
+            onChange={e => setPattern2(e.target.value)}
+            className="flex-1 text-xs border border-gray-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-300 min-w-0 placeholder-gray-300"
           />
         </div>
         <div className="flex flex-wrap gap-1.5">

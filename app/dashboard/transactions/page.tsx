@@ -7,6 +7,7 @@ import { AppHeader } from '@/components/AppHeader'
 import { MergeSplitsButton } from '@/components/MergeSplitsButton'
 import { CategorySubcategoryPickers } from '@/components/CategorySubcategoryPickers'
 import { UndoBar } from '@/components/UndoBar'
+import { MerchantName } from '@/components/MerchantName'
 
 import { TransactionFilters } from '@/components/TransactionFilters'
 import { SyncButton } from '@/components/SyncButton'
@@ -175,7 +176,7 @@ export default async function TransactionsPage({
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-1.5 min-w-0">
                         {isSplit && <Scissors className="h-3 w-3 text-orange-400 shrink-0" />}
-                        <p className={`text-sm font-medium truncate ${isSplit || hasSplits ? 'text-orange-800' : 'text-gray-900'} ${isExcluded ? 'line-through' : ''}`}>{tx.merchant_name}</p>
+                        <MerchantName name={tx.merchant_name ?? ''} className={`text-sm font-medium ${isSplit || hasSplits ? 'text-orange-800' : 'text-gray-900'} ${isExcluded ? 'line-through' : ''}`} />
                         {tx.pending && (
                           <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full shrink-0">Pending</span>
                         )}

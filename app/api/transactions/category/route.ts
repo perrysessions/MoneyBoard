@@ -23,6 +23,7 @@ export async function PATCH(req: Request) {
     scope,           // 'single' | 'all_past' | 'all'
     merchant_normalized,
     pattern,         // vendor pattern for ILIKE matching (all/all_past scopes)
+    pattern2,        // optional second must-also-contain phrase
     date,            // transaction date string, used for all_past scoping
   } = await req.json()
 
@@ -38,6 +39,9 @@ export async function PATCH(req: Request) {
 
     if (pattern?.trim()) {
       q = q.ilike('merchant_normalized', `%${pattern.trim()}%`)
+      if (pattern2?.trim()) {
+        q = q.ilike('merchant_normalized', `%${pattern2.trim()}%`)
+      }
     } else {
       q = q.eq('merchant_normalized', merchant_normalized)
     }
