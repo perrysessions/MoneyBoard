@@ -12,21 +12,33 @@ export default async function ChartsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  const baseQuery = () => {
-    let q = supabase
-      .from('transactions')
-      .select('date, amount_cents, category, subcategory, user_category, user_subcategory, merchant_name')
-      .eq('user_id', user.id)
-      .eq('pending', false)
-      .eq('is_internal_transfer', false)
-      .gt('amount_cents', 0)
-      .or('and(user_category.is.null,category.is.null),and(user_category.is.null,category.not.in.(TRANSFER_IN,TRANSFER_OUT)),and(user_category.not.is.null,user_category.not.in.(TRANSFER_IN,TRANSFER_OUT))')
-      .order('date', { ascending: true })
-    return q
+  const fetchAll = async (excludeCol: boolean) => {
+    const PAGE = 1000
+    const rows: any[] = []
+    let from = 0
+    while (true) {
+      let q = supabase
+        .from('transactions')
+        .select('date, amount_cents, category, subcategory, user_category, user_subcategory, merchant_name')
+        .eq('user_id', user.id)
+        .eq('pending', false)
+        .eq('is_internal_transfer', false)
+        .gt('amount_cents', 0)
+        .or('and(user_category.is.null,category.is.null),and(user_category.is.null,category.not.in.(TRANSFER_IN,TRANSFER_OUT)),and(user_category.not.is.null,user_category.not.in.(TRANSFER_IN,TRANSFER_OUT))')
+        .order('date', { ascending: true })
+        .range(from, from + PAGE - 1)
+      if (excludeCol) q = q.eq('is_excluded', false)
+      const { data, error } = await q
+      if (error) return { data: null, error }
+      rows.push(...(data ?? []))
+      if ((data?.length ?? 0) < PAGE) break
+      from += PAGE
+    }
+    return { data: rows, error: null }
   }
 
-  let result = await baseQuery().eq('is_excluded', false)
-  if (result.error) result = await baseQuery()
+  let result = await fetchAll(true)
+  if (result.error) result = await fetchAll(false)
   const transactions = result.data
 
   const txs = (transactions ?? []).map(t => ({

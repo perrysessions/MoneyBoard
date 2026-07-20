@@ -91,26 +91,35 @@ export default async function DashboardPage({
     return q
   }
 
-  const buildChartQuery = (excludeCol: boolean) => {
-    let q = supabase
-      .from('transactions')
-      .select('date, amount_cents')
-      .eq('user_id', user.id)
-      .eq('pending', false)
-      .eq('is_internal_transfer', false)
-    if (excludeCol) q = q.eq('is_excluded', false)
-    q = q.or('and(user_category.is.null,category.is.null),and(user_category.is.null,category.not.in.(TRANSFER_IN,TRANSFER_OUT)),and(user_category.not.is.null,user_category.not.in.(TRANSFER_IN,TRANSFER_OUT))')
-    if (from) q = q.gte('date', from)
-    if (to) q = q.lte('date', to)
-    return q
+  const fetchChartTxs = async (excludeCol: boolean) => {
+    const PAGE = 1000
+    const rows: { date: string; amount_cents: number }[] = []
+    let offset = 0
+    while (true) {
+      let q = supabase
+        .from('transactions')
+        .select('date, amount_cents')
+        .eq('user_id', user.id)
+        .eq('pending', false)
+        .eq('is_internal_transfer', false)
+      if (excludeCol) { q = q.eq('is_excluded', false); q = q.eq('is_excluded_totals', false) }
+      q = q.or('and(user_category.is.null,category.is.null),and(user_category.is.null,category.not.in.(TRANSFER_IN,TRANSFER_OUT)),and(user_category.not.is.null,user_category.not.in.(TRANSFER_IN,TRANSFER_OUT))')
+      if (from) q = q.gte('date', from)
+      if (to) q = q.lte('date', to)
+      const { data, error } = await q.range(offset, offset + PAGE - 1)
+      if (error) return { data: null, error }
+      rows.push(...(data ?? []))
+      if ((data?.length ?? 0) < PAGE) break
+      offset += PAGE
+    }
+    return { data: rows, error: null }
   }
 
   // Try with is_excluded filter; fall back gracefully if column doesn't exist yet
-  let [spendResult, incomeResult, countResult, chartResult] = await Promise.all([
+  let [spendResult, incomeResult, countResult] = await Promise.all([
     buildSpendQuery(true),
     buildIncomeQuery(true),
     supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
-    buildChartQuery(true),
   ])
 
   if (spendResult.error || incomeResult.error) {
@@ -119,9 +128,9 @@ export default async function DashboardPage({
       buildIncomeQuery(false),
     ])
   }
-  if (chartResult.error) {
-    chartResult = await buildChartQuery(false)
-  }
+
+  let chartResult = await fetchChartTxs(true)
+  if (chartResult.error) chartResult = await fetchChartTxs(false)
 
   const txData = spendResult.data
   const incomeData = incomeResult.data

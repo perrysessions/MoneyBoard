@@ -100,7 +100,10 @@ export async function POST(req: Request) {
     const { error } = await supabase
       .from('transactions')
       .upsert(batch, { onConflict: 'plaid_transaction_id' })
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      console.error('Import upsert error:', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
     imported += batch.length
   }
 

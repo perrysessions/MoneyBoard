@@ -297,7 +297,11 @@ export function ChartsView({ transactions, earliest, latest }: { transactions: T
                 const pct = entry && pieTotal > 0 ? Math.round((entry.value / pieTotal) * 100) : 0
                 const color = COLORS[colorIndex[cat] % COLORS.length]
                 const rawKey = displayToKey[cat] ?? ''
-                const txUrl = `/dashboard/transactions?${useSubcategory ? 'subcategory' : 'category'}=${encodeURIComponent(rawKey)}`
+                const pieDays = PRESETS[piePreset].days
+                const dateParams = pieDays < 9999
+                  ? `&dateFrom=${new Date(Date.now() - pieDays * 864e5).toISOString().slice(0, 10)}&dateTo=${new Date().toISOString().slice(0, 10)}`
+                  : ''
+                const txUrl = `/dashboard/transactions?${useSubcategory ? 'subcategory' : 'category'}=${encodeURIComponent(rawKey)}${dateParams}`
                 return (
                   <div key={cat} className={`flex items-center gap-1 rounded-lg ${isHidden ? 'opacity-35' : ''}`}>
                     <button

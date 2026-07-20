@@ -39,7 +39,7 @@ function groupKey(dateStr: string, gran: Granularity) {
 function formatLabel(key: string, gran: Granularity) {
   if (gran === 'month') {
     const [y, m] = key.split('-')
-    return new Date(parseInt(y), parseInt(m) - 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })
+    return new Date(parseInt(y), parseInt(m) - 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
   }
   const d = new Date(key + 'T00:00:00')
   if (gran === 'week') return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })

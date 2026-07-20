@@ -5,7 +5,7 @@ import { Upload, FileText, X, CheckCircle, AlertCircle, ChevronDown } from 'luci
 import type { ImportRow } from '@/app/api/import/route'
 
 type Account = { id: string; name: string; official_name: string | null; nickname: string | null; mask: string | null; institution: string | null }
-type Format = 'chase' | 'wells' | 'unknown'
+type Format = 'chase' | 'chase_bank' | 'wells' | 'unknown'
 type FileStatus = 'pending' | 'importing' | 'done' | 'error'
 
 interface ParsedFile {
@@ -26,6 +26,7 @@ interface ParsedFile {
 
 function detectFormat(header: string): Format {
   if (header.includes('Transaction Date') && header.includes('Post Date')) return 'chase'
+  if (header.includes('Details') && header.includes('Posting Date')) return 'chase_bank'
   if (header.includes('DATE') && header.includes('DESCRIPTION') && header.includes('AMOUNT')) return 'wells'
   return 'unknown'
 }
@@ -40,14 +41,18 @@ function cleanMerchant(raw: string): string {
   return raw.replace(/"/g, '').trim()
 }
 
-function syntheticId(source: string, date: string, amountCents: number, merchant: string): string {
+function syntheticId(source: string, date: string, amountCents: number, merchant: string, seen: Map<string, number>): string {
   const slug = merchant.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20)
-  return `import_${source}_${date.replace(/-/g, '')}_${amountCents}_${slug}`
+  const base = `import_${source}_${date.replace(/-/g, '')}_${amountCents}_${slug}`
+  const count = seen.get(base) ?? 0
+  seen.set(base, count + 1)
+  return count === 0 ? base : `${base}_${count}`
 }
 
 function parseChase(text: string, accountId: string): ImportRow[] {
   const lines = text.trim().split('\n')
   const rows: ImportRow[] = []
+  const seen = new Map<string, number>()
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCSVLine(lines[i])
     if (cols.length < 6) continue
@@ -68,7 +73,39 @@ function parseChase(text: string, accountId: string): ImportRow[] {
       amount_cents,
       account_id: accountId,
       import_source: 'chase_csv',
-      plaid_transaction_id: syntheticId('chase', date, amount_cents, merchant_normalized),
+      plaid_transaction_id: syntheticId('chase', date, amount_cents, merchant_normalized, seen),
+    })
+  }
+  return rows
+}
+
+function parseChasBank(text: string, accountId: string): ImportRow[] {
+  // Format: Details,Posting Date,Description,Amount,Type,Balance,Check or Slip #
+  const lines = text.trim().split('\n')
+  const rows: ImportRow[] = []
+  const seen = new Map<string, number>()
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCSVLine(lines[i])
+    if (cols.length < 5) continue
+    const [, dateRaw, description, amountRaw, type] = cols
+    if (!dateRaw || !description || !amountRaw) continue
+    // Skip internal bank transfers
+    if (type?.trim() === 'ACCT_XFER') continue
+    const date = parseDate(dateRaw)
+    if (!date || date === '--') continue
+    // Amount: positive = credit (income), negative = debit (expense) → flip sign for our schema
+    const amount_cents = Math.round(-parseFloat(amountRaw) * 100)
+    if (isNaN(amount_cents)) continue
+    const merchant_name = cleanMerchant(description)
+    const merchant_normalized = merchant_name.toLowerCase().replace(/\s+/g, ' ').trim()
+    rows.push({
+      date,
+      merchant_name,
+      merchant_normalized,
+      amount_cents,
+      account_id: accountId,
+      import_source: 'chase_csv',
+      plaid_transaction_id: syntheticId('chase_bank', date, amount_cents, merchant_normalized, seen),
     })
   }
   return rows
@@ -77,6 +114,7 @@ function parseChase(text: string, accountId: string): ImportRow[] {
 function parseWells(text: string, accountId: string): ImportRow[] {
   const lines = text.trim().split('\n')
   const rows: ImportRow[] = []
+  const seen = new Map<string, number>()
   for (let i = 1; i < lines.length; i++) {
     const cols = parseCSVLine(lines[i])
     if (cols.length < 3) continue
@@ -96,7 +134,7 @@ function parseWells(text: string, accountId: string): ImportRow[] {
       amount_cents,
       account_id: accountId,
       import_source: 'wells_csv',
-      plaid_transaction_id: syntheticId('wells', date, amount_cents, merchant_normalized),
+      plaid_transaction_id: syntheticId('wells', date, amount_cents, merchant_normalized, seen),
     })
   }
   return rows
@@ -137,9 +175,11 @@ export function ImportView({ accounts }: { accounts: Account[] }) {
         const format = detectFormat(firstLine)
         const tempRows = format === 'chase'
           ? parseChase(text, '')
-          : format === 'wells'
-            ? parseWells(text, '')
-            : []
+          : format === 'chase_bank'
+            ? parseChasBank(text, '')
+            : format === 'wells'
+              ? parseWells(text, '')
+              : []
         const dates = tempRows.map(r => r.date).sort()
         setFiles(prev => [...prev, {
           id: `${file.name}-${Date.now()}`,
@@ -264,10 +304,11 @@ export function ImportView({ accounts }: { accounts: Account[] }) {
                     <span className="text-sm font-medium text-gray-800 truncate">{file.filename}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                       file.format === 'chase' ? 'bg-blue-50 text-blue-600' :
+                      file.format === 'chase_bank' ? 'bg-blue-50 text-blue-600' :
                       file.format === 'wells' ? 'bg-green-50 text-green-600' :
                       'bg-red-50 text-red-500'
                     }`}>
-                      {file.format === 'chase' ? 'Chase' : file.format === 'wells' ? 'Wells Fargo' : 'Unknown format'}
+                      {file.format === 'chase' ? 'Chase Credit' : file.format === 'chase_bank' ? 'Chase Bank' : file.format === 'wells' ? 'Wells Fargo' : 'Unknown format'}
                     </span>
                     <span className="text-xs text-gray-400">{file.rows.length} rows</span>
                     {file.dateMin && (

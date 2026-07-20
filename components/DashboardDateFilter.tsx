@@ -68,13 +68,20 @@ export function DashboardDateFilter() {
   const pathname = usePathname()
   const sp = useSearchParams()
   const [showMonthMenu, setShowMonthMenu] = useState(false)
+  const [showCustom, setShowCustom] = useState(false)
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
   const monthMenuRef = useRef<HTMLDivElement>(null)
+  const customRef = useRef<HTMLDivElement>(null)
   const pastMonths = getPastMonths()
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (monthMenuRef.current && !monthMenuRef.current.contains(e.target as Node)) {
         setShowMonthMenu(false)
+      }
+      if (customRef.current && !customRef.current.contains(e.target as Node)) {
+        setShowCustom(false)
       }
     }
     document.addEventListener('mousedown', handler)
@@ -116,6 +123,17 @@ export function DashboardDateFilter() {
     setShowMonthMenu(false)
   }
 
+  const applyCustomDates = () => {
+    if (!customFrom || !customTo) return
+    if (typeof localStorage !== 'undefined') localStorage.setItem(LS_KEY, 'custom')
+    const params = new URLSearchParams()
+    params.set('preset', 'custom')
+    params.set('from', customFrom)
+    params.set('to', customTo)
+    router.push(`${pathname}?${params.toString()}`)
+    setShowCustom(false)
+  }
+
   return (
     <div className="mb-6">
       <div className="flex flex-wrap gap-1.5 mb-2">
@@ -136,9 +154,9 @@ export function DashboardDateFilter() {
         {/* Month picker dropdown */}
         <div ref={monthMenuRef} className="relative">
           <button
-            onClick={() => setShowMonthMenu(o => !o)}
+            onClick={() => { setShowMonthMenu(o => !o); setShowCustom(false) }}
             className={`px-3 py-1 rounded-full text-xs font-medium transition-colors flex items-center gap-1 ${
-              currentPreset === 'custom'
+              currentPreset === 'custom' && !showCustom
                 ? 'bg-blue-600 text-white'
                 : 'bg-white border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600'
             }`}
@@ -159,6 +177,51 @@ export function DashboardDateFilter() {
                   {m.label}
                 </button>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* Custom date range picker */}
+        <div ref={customRef} className="relative">
+          <button
+            onClick={() => { setShowCustom(o => !o); setShowMonthMenu(false) }}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors flex items-center gap-1 ${
+              showCustom
+                ? 'bg-blue-600 text-white'
+                : 'bg-white border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600'
+            }`}
+          >
+            Custom
+            <ChevronDown className="h-3 w-3" />
+          </button>
+
+          {showCustom && (
+            <div className="absolute left-0 top-full mt-1 w-60 bg-white border border-gray-200 rounded-xl shadow-lg p-3 z-50 space-y-2">
+              <div>
+                <label className="text-xs text-gray-500 block mb-0.5">From</label>
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={e => setCustomFrom(e.target.value)}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-0.5">To</label>
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={e => setCustomTo(e.target.value)}
+                  className="w-full text-xs border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <button
+                onClick={applyCustomDates}
+                disabled={!customFrom || !customTo}
+                className="w-full py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors"
+              >
+                Apply
+              </button>
             </div>
           )}
         </div>
