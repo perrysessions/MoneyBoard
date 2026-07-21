@@ -9,6 +9,20 @@ const model = genai.getGenerativeModel({ model: 'gemini-2.5-flash' })
 const DAILY_TOKEN_LIMIT = 100_000
 const MAX_TOOL_ROUNDS = 8
 
+// Signal tool — Gemini calls this when it needs live web data.
+// We detect it, finish any pending finance queries, then make a second call with googleSearch.
+const WEB_SEARCH_TOOL = {
+  name: 'request_web_search',
+  description:
+    'Call this when the question requires current internet data: national averages, benchmarks, news, interest rates, cost of living stats, or any real-world info not in the user\'s personal transaction history. Do NOT call this for questions answerable from transaction data alone.',
+  parameters: {
+    type: 'object',
+    properties: {
+      reason: { type: 'string', description: 'Brief reason why web search is needed' },
+    },
+  },
+}
+
 // Tool declarations — Gemini decides which to call based on the user's question
 const FINANCE_TOOLS = [
   {
@@ -365,23 +379,20 @@ export async function POST(req: Request) {
 
   const systemContext = `You are a personal finance assistant for Perry & Karen Sessions. Today is ${today}.
 
-You have tools to query their transaction data on demand — call them as needed to answer the user's question accurately. For questions about national averages or benchmarks you don't have data for, provide your best general knowledge answer.
+You have tools to query their transaction data on demand — call them as needed to answer accurately. When the question requires current internet data (national averages, benchmarks, news, rates), call request_web_search and we will fetch it for you. You can call finance tools and request_web_search in the same response if both are needed.
 
 CONNECTED ACCOUNTS:
 ${accountsList}
 
-When amounts are negative they represent income/credits; positive = charges/outflows. Exclude TRANSFER_IN and TRANSFER_OUT categories from spending totals. is_excluded transactions should be ignored. Format dollar amounts with $ and commas. Use markdown (## headers, **bold**, - bullets).`
+Amounts: negative = income/credits, positive = charges/outflows. Exclude TRANSFER_IN and TRANSFER_OUT from spending totals. Ignore is_excluded transactions. Format dollars with $ and commas. Use markdown (## headers, **bold**, - bullets).`
 
-  // Note: Gemini does not allow googleSearch + functionDeclarations in the same request.
-  // Function calling is used here for on-demand data access; web search is not available simultaneously.
-  const tools: any[] = [
-    { functionDeclarations: FINANCE_TOOLS },
+  const allTools: any[] = [
+    { functionDeclarations: [...FINANCE_TOOLS, WEB_SEARCH_TOOL] },
   ]
 
-  // Build contents array
   const contents: any[] = [
     { role: 'user', parts: [{ text: systemContext }] },
-    { role: 'model', parts: [{ text: 'Understood. I have access to your accounts and transaction tools. Ready to help.' }] },
+    { role: 'model', parts: [{ text: 'Understood. I have your accounts, finance query tools, and can request web search when needed.' }] },
     ...(prevMessages ?? []).map((m: any) => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: m.content }],
@@ -392,42 +403,78 @@ When amounts are negative they represent income/credits; positive = charges/outf
   try {
     let totalTokens = 0
     let finalText = ''
+    // Track finance data gathered during tool calls for injecting into web search call
+    const financeResults: { tool: string; result: string }[] = []
+    let webSearchNeeded = false
 
-    // Agentic loop — Gemini may call tools multiple times before answering
+    // Agentic loop — Gemini calls finance tools and/or request_web_search as needed
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const result = await model.generateContent({ contents, tools })
+      const result = await model.generateContent({ contents, tools: allTools })
       totalTokens +=
         (result.response.usageMetadata?.promptTokenCount ?? 0) +
         (result.response.usageMetadata?.candidatesTokenCount ?? 0)
 
       const candidate = result.response.candidates?.[0]
       const parts = candidate?.content?.parts ?? []
-
-      // Collect any function calls in this response
       const fnCalls = parts.filter((p: any) => p.functionCall)
 
       if (fnCalls.length === 0) {
-        // No tool calls — this is the final answer
         finalText = result.response.text()
         break
       }
 
-      // Execute all tool calls in parallel
-      const toolResults = await Promise.all(
-        fnCalls.map(async (p: any) => {
-          const output = await runTool(p.functionCall.name, p.functionCall.args ?? {}, supabase, user.id)
-          return {
-            functionResponse: {
-              name: p.functionCall.name,
-              response: { output },
-            },
-          }
-        }),
-      )
+      // Separate web search signal from real finance tool calls
+      const webCall = fnCalls.find((p: any) => p.functionCall.name === 'request_web_search')
+      const financeCalls = fnCalls.filter((p: any) => p.functionCall.name !== 'request_web_search')
 
-      // Append model turn + tool results to continue the conversation
-      contents.push({ role: 'model', parts })
-      contents.push({ role: 'user', parts: toolResults })
+      if (webCall) webSearchNeeded = true
+
+      if (financeCalls.length > 0) {
+        // Execute finance tools, collect results for potential web call context
+        const toolResults = await Promise.all(
+          financeCalls.map(async (p: any) => {
+            const output = await runTool(p.functionCall.name, p.functionCall.args ?? {}, supabase, user.id)
+            financeResults.push({ tool: p.functionCall.name, result: output })
+            return { functionResponse: { name: p.functionCall.name, response: { output } } }
+          }),
+        )
+        contents.push({ role: 'model', parts })
+        contents.push({ role: 'user', parts: toolResults })
+      } else if (webSearchNeeded) {
+        // Only web search was requested — exit finance loop
+        break
+      } else {
+        // Safety: no callable tools found, stop
+        finalText = result.response.text()
+        break
+      }
+    }
+
+    // Second call with googleSearch if AI requested web data
+    if (webSearchNeeded && !finalText) {
+      const financeContext = financeResults.length > 0
+        ? '\n\nFINANCE DATA ALREADY RETRIEVED:\n' +
+          financeResults.map(r => `${r.tool}: ${r.result}`).join('\n')
+        : ''
+
+      const webContents: any[] = [
+        { role: 'user', parts: [{ text: systemContext + financeContext }] },
+        { role: 'model', parts: [{ text: 'Understood. I have the finance data and will now search the web.' }] },
+        ...(prevMessages ?? []).map((m: any) => ({
+          role: m.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: m.content }],
+        })),
+        { role: 'user', parts: [{ text: message }] },
+      ]
+
+      const webResult = await model.generateContent({
+        contents: webContents,
+        tools: [{ googleSearch: {} } as any],
+      })
+      totalTokens +=
+        (webResult.response.usageMetadata?.promptTokenCount ?? 0) +
+        (webResult.response.usageMetadata?.candidatesTokenCount ?? 0)
+      finalText = webResult.response.text()
     }
 
     if (!finalText) {
