@@ -94,12 +94,21 @@ export async function PATCH(req: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // Store pattern override for future syncs when scope is 'all' and field is 'category'
-  if (scope === 'all' && field === 'category' && pattern?.trim()) {
+  // Store pattern override for future syncs when scope is 'all'
+  if (scope === 'all' && pattern?.trim()) {
+    const existing = await supabase
+      .from('merchant_overrides')
+      .select('category, subcategory')
+      .eq('user_id', user.id)
+      .eq('pattern', pattern.trim())
+      .maybeSingle()
+
+    const current = existing.data ?? {}
     await supabase.from('merchant_overrides').upsert({
       user_id: user.id,
       pattern: pattern.trim(),
-      category: value ?? null,
+      category: field === 'category' ? (value ?? null) : (current.category ?? null),
+      subcategory: field === 'subcategory' ? (value ?? null) : (current.subcategory ?? null),
     }, { onConflict: 'user_id,pattern' })
   }
 

@@ -95,15 +95,19 @@ export async function POST() {
 async function applyMerchantOverrides(supabase: any, userId: string) {
   const { data: overrides } = await supabase
     .from('merchant_overrides')
-    .select('pattern, category')
+    .select('pattern, category, subcategory')
     .eq('user_id', userId)
 
   if (!overrides?.length) return
 
   for (const override of overrides) {
+    const update: Record<string, any> = { manual_override: true }
+    if (override.category !== null) update.user_category = override.category
+    if (override.subcategory !== null) update.user_subcategory = override.subcategory
+
     await supabase
       .from('transactions')
-      .update({ user_category: override.category, manual_override: true })
+      .update(update)
       .eq('user_id', userId)
       .ilike('merchant_normalized', `%${override.pattern}%`)
       .is('user_category', null)
