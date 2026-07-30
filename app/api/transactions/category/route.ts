@@ -103,7 +103,7 @@ export async function PATCH(req: Request) {
       .eq('pattern', pattern.trim())
       .maybeSingle()
 
-    const current = existing.data ?? {}
+    const current = existing.data ?? {} as { category?: string | null; subcategory?: string | null }
     await supabase.from('merchant_overrides').upsert({
       user_id: user.id,
       pattern: pattern.trim(),
