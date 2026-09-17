@@ -5,11 +5,37 @@ import { redirect } from 'next/navigation'
 
 export async function login(formData: FormData) {
   const supabase = await createClient()
-  const email = formData.get('email') as string
+  const email = (formData.get('email') as string).trim()
   const password = formData.get('password') as string
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password })
-  if (error) return { error: error.message }
+  try {
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      // Supabase intentionally does not distinguish an unknown email from an
+      // incorrect password, so we keep this message equally non-revealing.
+      if (error.message.toLowerCase().includes('invalid login credentials')) {
+        return { error: 'Email or password is incorrect.' }
+      }
+
+      console.error('[auth/login] Supabase rejected sign-in:', {
+        email,
+        code: error.code,
+        status: error.status,
+        message: error.message,
+      })
+      return { error: error.message }
+    }
+  } catch (error) {
+    // The full cause is retained in Vercel Function Logs. Never log passwords.
+    console.error('[auth/login] Unable to reach Supabase Auth:', {
+      email,
+      error,
+    })
+    return {
+      error: 'Couldn’t reach the sign-in service. Please try again in a moment. If it continues, check the Vercel Function Logs for [auth/login].',
+    }
+  }
+
   redirect('/dashboard')
 }
 
