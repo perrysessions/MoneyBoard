@@ -21,7 +21,12 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // `getUser()` makes a request to Supabase Auth for every page navigation.
+  // In Vercel middleware that external request can hold up routing long enough
+  // to produce a 504. `getClaims()` verifies the signed session token locally
+  // when the project uses asymmetric signing keys (with cached JWKS fallback).
+  const { data: claimsData } = await supabase.auth.getClaims()
+  const user = claimsData?.claims ?? null
 
   const isAuthPage = request.nextUrl.pathname.startsWith('/login') ||
     request.nextUrl.pathname.startsWith('/signup')
