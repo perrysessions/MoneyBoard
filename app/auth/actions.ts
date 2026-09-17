@@ -17,6 +17,17 @@ export async function login(formData: FormData) {
         return { error: 'Email or password is incorrect.' }
       }
 
+      if (error.message.toLowerCase().includes('fetch failed')) {
+        console.error('[auth/login] Supabase Auth endpoint is unreachable:', {
+          email,
+          code: error.code,
+          status: error.status,
+        })
+        return {
+          error: 'Money Board cannot reach its sign-in service right now. The Supabase project connection needs to be restored.',
+        }
+      }
+
       console.error('[auth/login] Supabase rejected sign-in:', {
         email,
         code: error.code,
