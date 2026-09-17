@@ -7,13 +7,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { DollarSign } from 'lucide-react'
+import { DollarSign, Eye, EyeOff } from 'lucide-react'
 
 export default function LoginPage({ searchParams }: { searchParams: { error?: string } }) {
   const [error, setError] = useState<string | null>(
     searchParams.error === 'confirmation_failed' ? 'Email confirmation failed. Please try again.' : null
   )
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -67,11 +68,21 @@ export default function LoginPage({ searchParams }: { searchParams: { error?: st
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-sm font-medium text-gray-700">Password</Label>
-                <Input
-                  id="password" name="password" type="password" required
-                  placeholder="••••••••"
-                  className="h-12 rounded-xl text-base border-gray-200 focus:border-blue-500"
-                />
+                <div className="relative">
+                  <Input
+                    id="password" name="password" type={showPassword ? 'text' : 'password'} required
+                    placeholder="••••••••"
+                    className="h-12 rounded-xl pr-11 text-base border-gray-200 focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(value => !value)}
+                    className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-gray-400 hover:text-gray-600"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                  </button>
+                </div>
               </div>
               {error && (
                 <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
