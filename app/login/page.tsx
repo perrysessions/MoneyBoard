@@ -19,9 +19,21 @@ export default function LoginPage({ searchParams }: { searchParams: { error?: st
     e.preventDefault()
     setLoading(true)
     setError(null)
-    const result = await login(new FormData(e.currentTarget))
-    if (result?.error) {
-      setError(result.error)
+    try {
+      const result = await login(new FormData(e.currentTarget))
+      if (result?.error) {
+        // Server Actions can serialize unexpected failures as an object. Do
+        // not render that object directly as `{}` in the login form.
+        setError(
+          typeof result.error === 'string'
+            ? result.error
+            : 'Sign-in could not be completed. Please try again.'
+        )
+        setLoading(false)
+      }
+    } catch (error) {
+      console.error('[login] Server action failed:', error)
+      setError('Sign-in could not be completed. Please try again.')
       setLoading(false)
     }
   }
