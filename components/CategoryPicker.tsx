@@ -7,6 +7,7 @@ import { ChevronDown, X, Search } from 'lucide-react'
 import { addUndoEntry } from '@/lib/undoHistory'
 
 type Scope = 'single' | 'all_past' | 'all'
+const HIDDEN_TRANSFER_CATEGORIES = new Set(['TRANSFER_IN', 'TRANSFER_OUT'])
 
 function suggestPattern(merchantNormalized: string): string {
   const m = merchantNormalized.match(/^(.*?)\s+\d/)
@@ -169,6 +170,11 @@ export function CategoryPicker({
             <X className="h-3 w-3" />
           </button>
         </div>
+        {pending && HIDDEN_TRANSFER_CATEGORIES.has(pending) && (
+          <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-2 py-1">
+            Transfer categories are hidden by default and excluded from income and expense totals.
+          </p>
+        )}
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-gray-400 shrink-0">Contains:</span>
           <input
@@ -260,9 +266,12 @@ export function CategoryPicker({
               <li
                 key={key}
                 onMouseDown={() => handleSelect(key)}
-                className={`px-3 py-2 text-xs cursor-pointer hover:bg-blue-50 ${value === key ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'}`}
+                className={`px-3 py-2 text-xs cursor-pointer hover:bg-blue-50 flex items-center justify-between gap-2 ${value === key ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'}`}
               >
-                {PRIMARY_LABELS[key]}
+                <span>{PRIMARY_LABELS[key]}</span>
+                {HIDDEN_TRANSFER_CATEGORIES.has(key) && (
+                  <span className="text-[10px] font-normal text-gray-400 whitespace-nowrap">hides by default</span>
+                )}
               </li>
             ))}
             {filteredCustom.length > 0 && (
