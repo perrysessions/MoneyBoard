@@ -28,20 +28,16 @@ export async function middleware(request: NextRequest) {
   const { data: claimsData } = await supabase.auth.getClaims()
   const user = claimsData?.claims ?? null
 
-  const isAuthPage = request.nextUrl.pathname.startsWith('/login') ||
-    request.nextUrl.pathname.startsWith('/signup')
-
-  if (!user && !isAuthPage) {
+  if (!user) {
     return NextResponse.redirect(new URL('/login', request.url))
-  }
-
-  if (user && isAuthPage) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
   }
 
   return supabaseResponse
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api).*)'],
+  // Keep Supabase session refresh and access checks on protected pages only.
+  // In particular, a login form submission must not wait for middleware before
+  // its server action can reach Supabase Auth.
+  matcher: ['/dashboard/:path*'],
 }
